@@ -589,7 +589,7 @@ int main()
             ImGui::PopStyleColor(2);
             ImGui::Spacing();
             ImGui::PlotLines("", plot.frameTimes, getSize(plot.frameTimes), 0, nullptr, 0.f,
-                             20.f, {0, 60});
+                             150.f, {400, 150});
 
             ImGui::Spacing();
             ImGui::Text("vsync");
