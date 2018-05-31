@@ -6,7 +6,85 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <float.h>
 
+void loadModel(Model& model, const char* const filename)
+{
+	FILE* file = fopen(filename, "r");
+	if (!file)
+	{
+		printf("could not load model: %s\n", filename);
+		return;
+	}
+
+	char buf[256];
+	int pos = 0;
+	while (true)
+	{
+		const int c = getc(file);
+
+		if (c == EOF)
+			break;
+
+		if (pos == getSize(buf))
+		{
+			printf("loadModel error (too long line): %s\n", filename);
+			break;
+		}
+
+		buf[pos] = c;
+
+		if (c != '\n')
+		{
+			++pos;
+			continue;
+		}
+
+		buf[pos] = '\0';
+		pos = 0;
+
+		char* start = buf + 2;
+
+		if (buf[0] == 'v')
+		{
+			vec3 pos;
+			assert(sscanf(start, "%f %f %f", &pos.x, &pos.y, &pos.z) == 3);
+			model.positions.pushBack(pos);
+		}
+		else if (strncmp(buf, "vt", 2) == 0)
+		{
+			vec2 texCoord;
+			assert(sscanf(start, "%f %f", &texCoord.x, &texCoord.y) == 2);
+			model.texCoords.pushBack(texCoord);
+		}
+		else if (strncmp(buf, "vn", 2) == 0)
+		{
+			vec3 normal;
+			assert(sscanf(start, "%f %f %f", &normal.x, &normal.y, &normal.z) == 3);
+			model.normals.pushBack(normal);
+		}
+		else if (buf[0] == 'f')
+		{
+			Face face;
+			assert(sscanf(start, "%d/%d/%d %d/%d/%d %d/%d/%d",
+				&face.indices[0].position, &face.indices[0].texCoord, &face.indices[0].normal,
+				&face.indices[1].position, &face.indices[1].texCoord, &face.indices[1].normal,
+				&face.indices[2].position, &face.indices[2].texCoord, &face.indices[2].normal) == 9);
+
+			// in wavefront indicies start from 1
+			for (Index& i : face.indices)
+			{
+				--i.position;
+				--i.texCoord;
+				--i.normal;
+			}
+
+			model.faces.pushBack(face);
+		}
+	}
+
+	fclose(file);
+}
 
 inline RGB8 toRGB8(vec3 color)
 {
@@ -16,34 +94,28 @@ inline RGB8 toRGB8(vec3 color)
 		unsigned char(min(color.z, 1.f) * 255) };
 }
 
-struct Img
+void setPx(Framebuffer& fb, ivec2 pos, vec3 color)
 {
-	RGB8* buf;
-	ivec2 size;
-};
-
-void setPx(Img img, ivec2 pos, vec3 color)
-{
-	assert(img.size.x > pos.x);
-	assert(img.size.y > pos.y);
-	img.buf[img.size.x * pos.y + pos.x] = toRGB8(color);
+	assert(fb.size.x > pos.x);
+	assert(fb.size.y > pos.y);
+	fb.array[fb.size.x * pos.y + pos.x] = toRGB8(color);
 }
 
-void drawLine(Img img, vec2 startf, vec2 endf, vec3 color)
+void drawLine(Framebuffer& fb, vec2 startf, vec2 endf, vec3 color)
 {
 	ivec2 start = ivec2(startf) + 0.5f;
 	ivec2 end = ivec2(endf) + 0.5f;
 
 	// clip
 	start.x = max(0, start.x);
-	start.x = min(img.size.x - 1, start.x);
+	start.x = min(fb.size.x - 1, start.x);
 	start.y = max(0, start.y);
-	start.y = min(img.size.y - 1, start.y);
+	start.y = min(fb.size.y - 1, start.y);
 
 	end.x = max(0, end.x);
-	end.x = min(img.size.x - 1, end.x);
+	end.x = min(fb.size.x - 1, end.x);
 	end.y = max(0, end.y);
-	end.y = min(img.size.y - 1, end.y);
+	end.y = min(fb.size.y - 1, end.y);
 
 	bool steep = false;
 	if (fabs(start.x - end.x) < fabs(start.y - end.y))
@@ -62,92 +134,40 @@ void drawLine(Img img, vec2 startf, vec2 endf, vec3 color)
 		const int y = start.y + t * (end.y - start.y);
 
 		if (steep)
-			setPx(img, { y, x }, color);
+			setPx(fb, { y, x }, color);
 		else
-			setPx(img, { x, y }, color);
+			setPx(fb, { x, y }, color);
 
 	}
 }
 
-void loadModel(Model& model, const char* const filename)
+void drawTriangle(Framebuffer& fb, vec3 v1f, vec3 v2f, vec3 v3f)
 {
-	FILE* file = fopen(filename, "r");
-	if (!file)
+	ivec3 v1(v1f + 0.5f);
+	ivec3 v2(v2f + 0.5f);
+	ivec3 v3(v3f + 0.5f);
+
+	ivec2 bboxStart;
+	ivec2 bboxEnd;
+	bboxStart.x = min(min(v1.x, v2.x), v3.x);
+	bboxStart.y = min(min(v1.y, v2.y), v3.y);
+	bboxEnd.x = max(max(v1.x, v2.x), v3.x);
+	bboxEnd.y = max(max(v1.y, v2.y), v3.y);
+
+	// clipping
+	bboxStart.x = max(0, bboxStart.x);
+	bboxStart.y = max(0, bboxStart.y);
+	bboxEnd.x = min(fb.size.x - 1, bboxStart.x);
+	bboxEnd.y = min(fb.size.y - 1, bboxStart.y);
+
+	for (int x = bboxStart.x; x <= bboxEnd.x; ++x)
 	{
-		printf("could not load model: %s\n", filename);
-		return;
-	}
-
-	char buf[256];
-	int pos = 0;
-	while (true)
-	{
-		int c = getc(file);
-
-		if (c == EOF)
-			break;
-
-		if (ferror(file))
+		for (int y = bboxStart.y; y <= bboxEnd.y; ++y)
 		{
-			printf("loadModel file IO error: %s\n", filename);
-			break;
-		}
-
-		if (pos == getSize(buf))
-		{
-			printf("loadModel error (too long line): %s\n", filename);
-			break;
-		}
-
-		buf[pos] = c;
-		++pos;
-
-		if (c == '\n')
-		{
-			buf[pos] = '\0';
-			pos = 0;
-
-			char* start = buf + 2;
-
-			if (buf[0] == 'v')
-			{
-				vec3 pos = {}; // without {} msvc outputs error
-				assert(sscanf(start, "%f%f%f", &pos.x, &pos.y, &pos.z) == 3);
-				model.positions.pushBack(pos);
-			}
-			else if (strncmp(buf, "vt", 2) == 0)
-			{
-				vec2 texCoord;
-				assert(sscanf(start, "%f%f", &texCoord.x, &texCoord.y) == 2);
-				model.texCoords.pushBack(texCoord);
-			}
-			else if (strncmp(buf, "vn", 2) == 0)
-			{
-				vec3 normal;
-				assert(sscanf(start, "%f%f%f", &normal.x, &normal.y, &normal.z) == 3);
-				model.normals.pushBack(normal);
-			}
-			else if (buf[0] == 'f')
-			{
-				Face face;
-				assert(sscanf(start, "%d/%d/%d %d/%d/%d %d/%d/%d",
-					&face.indices[0].position, &face.indices[0].texCoord, &face.indices[0].normal,
-					&face.indices[1].position, &face.indices[1].texCoord, &face.indices[1].normal,
-					&face.indices[2].position, &face.indices[2].texCoord, &face.indices[2].normal ) == 9);
-
-				// in wavefront indicies start from 1
-				for (Index& i : face.indices)
-				{
-					--i.position;
-					--i.texCoord;
-					--i.normal;
-				}
-				model.faces.pushBack(face);
-			}
+			ivec2 p = { x, y };
+			// is inside triangle? + barycentric coordinates
 		}
 	}
-
-	fclose(file);
 }
 
 Rasterizer::Rasterizer()
@@ -168,7 +188,7 @@ Rasterizer::~Rasterizer()
 
 void Rasterizer::processInput(const Array<WinEvent>& events)
 {
-	for(const WinEvent& e : events)
+	for (const WinEvent& e : events)
 	{
 		if (e.type == WinEvent::Type::Key && e.key.key == GLFW_KEY_ESCAPE && e.key.action == GLFW_PRESS)
 			frame_.popMe = true;
@@ -177,12 +197,15 @@ void Rasterizer::processInput(const Array<WinEvent>& events)
 
 void Rasterizer::render(GLuint program)
 {
-	framebuffer_.resize(frame_.fbSize.x * frame_.fbSize.y);
+	framebuffer_.array.resize(frame_.fbSize.x * frame_.fbSize.y);
+	framebuffer_.size = ivec2(frame_.fbSize);
+	depthBuffer_.resize(frame_.fbSize.x * frame_.fbSize.y);
 
-	for (RGB8& px : framebuffer_)
+	for (RGB8& px : framebuffer_.array)
 		px = { 0, 0, 0 };
 
-	Img img = { framebuffer_.data(), ivec2(frame_.fbSize) };
+	for (float& v : depthBuffer_)
+		v = FLT_MAX;
 
 	// rendering
 	// @@@@@
@@ -198,7 +221,7 @@ void Rasterizer::render(GLuint program)
 			const vec2 start = (vec2(v1.x, v1.y) + 1.f) * (frame_.fbSize - 1.f) / 2.f;
 			const vec2 end = (vec2(v2.x, v2.y) + 1.f) * (frame_.fbSize - 1.f) / 2.f;
 
-			drawLine(img, start, end, { 1.f, 0.f, 1.f });
+			drawLine(framebuffer_, start, end, { 1.f, 0.f, 1.f });
 		}
 	}
 	// @@@@@
@@ -211,7 +234,7 @@ void Rasterizer::render(GLuint program)
 	glBindTexture(GL_TEXTURE_2D, glTexture_);
 
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, frame_.fbSize.x, frame_.fbSize.y, 0, GL_RGB, GL_UNSIGNED_BYTE,
-		framebuffer_.data());
+		framebuffer_.array.data());
 
 	Rect rect;
 	rect.pos = { 0.f, 0.f };

@@ -279,6 +279,12 @@ struct Model
 	Array<vec3> normals;
 };
 
+struct Framebuffer
+{
+	Array<RGB8> array;
+	ivec2 size;
+};
+
 class Rasterizer: public Scene
 {
 public:
@@ -288,7 +294,8 @@ public:
     void render(GLuint program) override;
 
 private:
-	Array<RGB8> framebuffer_;
+	Framebuffer framebuffer_;
+	Array<float> depthBuffer_;
 	GLuint glTexture_;
 	GLBuffers glBuffers_;
 	Model model_;
