@@ -9,6 +9,14 @@ inline T max(T a, T b) {return a > b ? a : b;}
 template<typename T>
 inline T min(T a, T b) {return a < b ? a : b;}
 
+template<typename T>
+inline void swapcpy(T&l, T& r)
+{
+	T temp = l;
+	l = r;
+	r = temp;
+}
+
 using GLuint = unsigned int;
 
 // use on plain C arrays
@@ -60,6 +68,49 @@ inline tvec2<T> operator*(T scalar, tvec2<T> v) {return v * scalar;}
 using ivec2 = tvec2<int>;
 using vec2  = tvec2<float>;
 
+template<typename T>
+struct tvec3
+{
+    tvec3() = default;
+    explicit tvec3(T v): x(v), y(v), z(v) {}
+    tvec3(T x, T y, T z): x(x), y(y), z(z) {}
+
+    template<typename U>
+    explicit tvec3(tvec3<U> v): x(v.x), y(v.y), z(v.z) {}
+
+    //                @ const tvec2& ?
+	tvec3& operator+=(tvec3 v) { x += v.x; y += v.y; z += v.z; return *this; }
+	tvec3& operator+=(T v) { x += v; y += v; z += v; return *this; }
+	tvec3& operator-=(tvec3 v) { x -= v.x; y -= v.y; z -= v.z; return *this; }
+	tvec3& operator-=(T v) { x -= v; y -= v; z -= v; return *this; }
+	tvec3& operator*=(tvec3 v) { x *= v.x; y *= v.y; z *= v.z; return *this; }
+	tvec3& operator*=(T v) { x *= v; y *= v; z *= v; return *this; }
+	tvec3& operator/=(tvec3 v) { x /= v.x; y /= v.y; z /= v.z; return *this; }
+	tvec3& operator/=(T v) { x /= v; y /= v; z /= v; return *this; }
+
+    tvec3 operator+(tvec3 v) const {return {x + v.x, y + v.y, z + v.z};}
+    tvec3 operator+(T v)     const {return {x + v, y + v, z + v};}
+    tvec3 operator-(tvec3 v) const {return {x - v.x, y - v.y, z - v.z};}
+    tvec3 operator-(T v)     const {return {x - v, y - v, z - v};}
+    tvec3 operator*(tvec3 v) const {return {x * v.x, y * v.y, z * v.z};}
+    tvec3 operator*(T v)     const {return {x * v, y * v, z * v};}
+    tvec3 operator/(tvec3 v) const {return {x / v.x, y / v.y, z / v.z};}
+    tvec3 operator/(T v)     const {return {x / v, y / v, z / v};}
+
+    bool operator==(tvec3 v) const {return x == v.x && y == v.y && z == v.z;}
+    bool operator!=(tvec3 v) const {return !(*this == v);}
+
+    T x;
+    T y;
+	T z;
+};
+
+template<typename T>
+inline tvec3<T> operator*(T scalar, tvec3<T> v) {return v * scalar;}
+
+using ivec3 = tvec3<int>;
+using vec3  = tvec3<float>;
+
 struct vec4
 {
     float x;
@@ -73,7 +124,7 @@ struct FragmentMode
     enum
     {
         Color = 0,
-        Texture = 1,
+        Texture = 1
     };
 };
 
@@ -205,6 +256,29 @@ public:
     } frame_;
 };
 
+struct RGB8
+{
+	unsigned char r, g, b;
+};
+
+struct Index
+{
+	int position, texCoord, normal;
+};
+
+struct Face
+{
+	Index indices[3];
+};
+
+struct Model
+{
+	Array<Face> faces;
+	Array<vec3> positions;
+	Array<vec2> texCoords;
+	Array<vec3> normals;
+};
+
 class Rasterizer: public Scene
 {
 public:
@@ -214,4 +288,8 @@ public:
     void render(GLuint program) override;
 
 private:
+	Array<RGB8> framebuffer_;
+	GLuint glTexture_;
+	GLBuffers glBuffers_;
+	Model model_;
 };
