@@ -111,7 +111,6 @@ void drawLine(Framebuffer& fb, vec2 startf, vec2 endf, vec3 color)
 	start.x = min(fb.size.x - 1, start.x);
 	start.y = max(0, start.y);
 	start.y = min(fb.size.y - 1, start.y);
-
 	end.x = max(0, end.x);
 	end.x = min(fb.size.x - 1, end.x);
 	end.y = max(0, end.y);
@@ -141,11 +140,64 @@ void drawLine(Framebuffer& fb, vec2 startf, vec2 endf, vec3 color)
 	}
 }
 
-void drawTriangle(Framebuffer& fb, vec3 v1f, vec3 v2f, vec3 v3f)
+vec3 cross(vec3 v, vec3 w)
 {
-	ivec3 v1(v1f + 0.5f);
-	ivec3 v2(v2f + 0.5f);
-	ivec3 v3(v3f + 0.5f);
+	return  {
+		v.y * w.z - v.z * w.y,
+		v.z * w.x - v.x * w.z,
+		v.x * w.y - v.y * w.x
+	};
+}
+
+inline float length(vec2 v)
+{
+	return sqrtf(v.x * v.x + v.y * v.y);
+}
+
+inline float length(vec3 v)
+{
+	return sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
+inline vec2 normalize(vec2 v)
+{
+	return v * (1.f / length(v));
+}
+
+inline vec3 normalize(vec3 v)
+{
+	return v * (1.f / length(v));
+}
+
+inline float dot(vec3 v1, vec3 v2)
+{
+	return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+}
+
+inline float dot(vec2 v1, vec2 v2)
+{
+	return v1.x * v2.x + v1.y * v2.y;
+}
+
+// this is the implementation from tinyrenderer on github
+// todo: study the implementation for scratchpixel
+// + culling might be implemented here?
+vec3 getBarycentric(ivec2 A, ivec2 B, ivec2 C, ivec2 P)
+{
+	vec3 u = cross(vec3(B.x - A.x, C.x - A.x, A.x - P.x), vec3(B.y - A.y, C.y - A.y, A.y - P.y));
+
+	// I don't understand this part, why the triangle is degenerate?
+	if (fabs(u.z) < 1.f)
+		return vec3(-1.f);
+
+	return { 1.f - (u.x + u.y) / u.z, u.x / u.z, u.y / u.z };
+}
+
+void drawTriangle(Framebuffer& fb, vec3 v1f, vec3 v2f, vec3 v3f, vec3 color)
+{
+	ivec2 v1 = ivec2(v1f.x, v1f.y) + 0.5f;
+	ivec2 v2 = ivec2(v2f.x, v2f.y) + 0.5f;
+	ivec2 v3 = ivec2(v3f.x, v3f.y) + 0.5f;
 
 	ivec2 bboxStart;
 	ivec2 bboxEnd;
@@ -157,15 +209,21 @@ void drawTriangle(Framebuffer& fb, vec3 v1f, vec3 v2f, vec3 v3f)
 	// clipping
 	bboxStart.x = max(0, bboxStart.x);
 	bboxStart.y = max(0, bboxStart.y);
-	bboxEnd.x = min(fb.size.x - 1, bboxStart.x);
-	bboxEnd.y = min(fb.size.y - 1, bboxStart.y);
+	bboxEnd.x = min(fb.size.x - 1, bboxEnd.x);
+	bboxEnd.y = min(fb.size.y - 1, bboxEnd.y);
 
 	for (int x = bboxStart.x; x <= bboxEnd.x; ++x)
 	{
 		for (int y = bboxStart.y; y <= bboxEnd.y; ++y)
 		{
-			ivec2 p = { x, y };
-			// is inside triangle? + barycentric coordinates
+			const ivec2 p = { x, y };
+			const vec3 b = getBarycentric(v1, v2, v3, p);
+
+			// check if the barycentric coordinates are valid
+			if (b.x < 0.f || b.y < 0.f || b.z < 0.f)
+				continue;
+
+			setPx(fb, p, color);
 		}
 	}
 }
@@ -197,6 +255,14 @@ void Rasterizer::processInput(const Array<WinEvent>& events)
 
 void Rasterizer::render(GLuint program)
 {
+	// configuration
+	struct
+	{
+		bool wireframe = false;
+		bool cullBackface = true;
+		bool cullFrontface = false;
+	} static c;
+
 	framebuffer_.array.resize(frame_.fbSize.x * frame_.fbSize.y);
 	framebuffer_.size = ivec2(frame_.fbSize);
 	depthBuffer_.resize(frame_.fbSize.x * frame_.fbSize.y);
@@ -207,23 +273,62 @@ void Rasterizer::render(GLuint program)
 	for (float& v : depthBuffer_)
 		v = FLT_MAX;
 
-	// rendering
+	// software rendering
 	// @@@@@
+
 	for (const Face& face : model_.faces)
 	{
-		for (int i = 0; i < 3; ++i)
+		if (c.wireframe)
 		{
-			vec3 v1 = model_.positions[face.indices[i].position];
-			vec3 v2 = model_.positions[face.indices[(i + 1) % 3].position];
-			v1.y *= -1.f;
-			v2.y *= -1.f;
+			for (int i = 0; i < 3; ++i)
+			{
+				vec3 v1 = model_.positions[face.indices[i].position];
+				vec3 v2 = model_.positions[face.indices[(i + 1) % 3].position];
+				
+				v1.y *= -1.f;
+				v2.y *= -1.f;
 
-			const vec2 start = (vec2(v1.x, v1.y) + 1.f) * (frame_.fbSize - 1.f) / 2.f;
-			const vec2 end = (vec2(v2.x, v2.y) + 1.f) * (frame_.fbSize - 1.f) / 2.f;
+				const vec2 start = (vec2(v1.x, v1.y) + 1.f) * (frame_.fbSize - 1.f) / 2.f;
+				const vec2 end = (vec2(v2.x, v2.y) + 1.f) * (frame_.fbSize - 1.f) / 2.f;
 
-			drawLine(framebuffer_, start, end, { 1.f, 0.f, 1.f });
+				drawLine(framebuffer_, start, end, { 1.f, 0.f, 1.f });
+			}
+		}
+		else
+		{
+			vec3 v[3];
+			vec3 vModel[3];
+
+			for (int i = 0; i < 3; ++i)
+			{
+				vModel[i] = model_.positions[face.indices[i].position];
+
+				v[i] = model_.positions[face.indices[i].position];
+
+				v[i].y *= -1.f;
+
+				v[i].x = (v[i].x + 1.f) * (frame_.fbSize.x - 1.f) / 2.f;
+				v[i].y = (v[i].y + 1.f) * (frame_.fbSize.y - 1.f) / 2.f;
+			}
+
+			const vec3 n = normalize(cross(vModel[2] - vModel[0], vModel[1] - vModel[0]));
+			const vec3 lightDir = { 0.f, 0.f, -1.f };
+			const float intensity = dot(n, lightDir * -1.f);
+			
+			// face culling, counter-clockwise winding order
+			const bool frontFace = intensity > 0.f;
+			bool render = false;
+
+			if (frontFace && !c.cullFrontface)
+				render = true;
+			else if (!frontFace && !c.cullBackface)
+				render = true;
+
+			if(render)
+				drawTriangle(framebuffer_, v[0], v[1], v[2], vec3(1.f, 1.f, 1.f) * intensity);
 		}
 	}
+	
 	// @@@@@
 
 	bindProgram(program);
@@ -246,5 +351,14 @@ void Rasterizer::render(GLuint program)
 	ImGui::Begin("info");
 	ImGui::Text("press Esc to exit");
 	ImGui::Text("triangles: %d", model_.faces.size());
+	ImGui::Checkbox("wireframe", &c.wireframe);
+
+	if (ImGui::TreeNode("cull (counter-clockwise winding order"))
+	{
+		ImGui::Checkbox("back-faces", &c.cullBackface);
+		ImGui::Checkbox("front-faces", &c.cullFrontface);
+		ImGui::TreePop();
+	}
+
 	ImGui::End();
 }
