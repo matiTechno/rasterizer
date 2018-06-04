@@ -281,7 +281,8 @@ struct Model
 
 struct Framebuffer
 {
-	Array<RGB8> array;
+	Array<RGB8> colorArray;
+	Array<float> depthArray;
 	ivec2 size;
 };
 
@@ -295,7 +296,6 @@ public:
 
 private:
 	Framebuffer framebuffer_;
-	Array<float> depthBuffer_;
 	GLuint glTexture_;
 	GLBuffers glBuffers_;
 	Model model_;

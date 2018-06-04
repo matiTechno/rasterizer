@@ -98,7 +98,23 @@ void setPx(Framebuffer& fb, ivec2 pos, vec3 color)
 {
 	assert(fb.size.x > pos.x);
 	assert(fb.size.y > pos.y);
-	fb.array[fb.size.x * pos.y + pos.x] = toRGB8(color);
+	fb.colorArray[fb.size.x * pos.y + pos.x] = toRGB8(color);
+}
+
+// returns false if the depth value was not written
+bool setPxDepth(Framebuffer& fb, ivec2 pos, float depth)
+{
+	assert(fb.size.x > pos.x);
+	assert(fb.size.y > pos.y);
+	const int idx = fb.size.x * pos.y + pos.x;
+
+	if (fb.depthArray[idx] > depth)
+	{
+		fb.depthArray[idx] = depth;
+		return true;
+	}
+
+	return false;
 }
 
 void drawLine(Framebuffer& fb, vec2 startf, vec2 endf, vec3 color)
@@ -193,7 +209,7 @@ vec3 getBarycentric(ivec2 A, ivec2 B, ivec2 C, ivec2 P)
 	return { 1.f - (u.x + u.y) / u.z, u.x / u.z, u.y / u.z };
 }
 
-void drawTriangle(Framebuffer& fb, vec3 v1f, vec3 v2f, vec3 v3f, vec3 color)
+void drawTriangle(Framebuffer& fb, bool depthTest, vec3 v1f, vec3 v2f, vec3 v3f, vec3 color)
 {
 	ivec2 v1 = ivec2(v1f.x, v1f.y) + 0.5f;
 	ivec2 v2 = ivec2(v2f.x, v2f.y) + 0.5f;
@@ -223,7 +239,10 @@ void drawTriangle(Framebuffer& fb, vec3 v1f, vec3 v2f, vec3 v3f, vec3 color)
 			if (b.x < 0.f || b.y < 0.f || b.z < 0.f)
 				continue;
 
-			setPx(fb, p, color);
+			const float depth = b.x * v1f.z + b.y * v2f.z + b.z * v3f.z;
+
+			if(setPxDepth(fb, p, depth) || !depthTest)
+				setPx(fb, p, color);
 		}
 	}
 }
@@ -261,16 +280,17 @@ void Rasterizer::render(GLuint program)
 		bool wireframe = false;
 		bool cullBackface = true;
 		bool cullFrontface = false;
+		bool depthTest = true;
 	} static c;
 
-	framebuffer_.array.resize(frame_.fbSize.x * frame_.fbSize.y);
+	framebuffer_.colorArray.resize(frame_.fbSize.x * frame_.fbSize.y);
+	framebuffer_.depthArray.resize(frame_.fbSize.x * frame_.fbSize.y);
 	framebuffer_.size = ivec2(frame_.fbSize);
-	depthBuffer_.resize(frame_.fbSize.x * frame_.fbSize.y);
 
-	for (RGB8& px : framebuffer_.array)
+	for (RGB8& px : framebuffer_.colorArray)
 		px = { 0, 0, 0 };
 
-	for (float& v : depthBuffer_)
+	for (float& v : framebuffer_.depthArray)
 		v = FLT_MAX;
 
 	// software rendering
@@ -325,7 +345,7 @@ void Rasterizer::render(GLuint program)
 				render = true;
 
 			if(render)
-				drawTriangle(framebuffer_, v[0], v[1], v[2], vec3(1.f, 1.f, 1.f) * intensity);
+				drawTriangle(framebuffer_, c.depthTest, v[0], v[1], v[2], vec3(1.f, 1.f, 1.f) * intensity);
 		}
 	}
 	
@@ -339,7 +359,7 @@ void Rasterizer::render(GLuint program)
 	glBindTexture(GL_TEXTURE_2D, glTexture_);
 
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, frame_.fbSize.x, frame_.fbSize.y, 0, GL_RGB, GL_UNSIGNED_BYTE,
-		framebuffer_.array.data());
+		framebuffer_.colorArray.data());
 
 	Rect rect;
 	rect.pos = { 0.f, 0.f };
@@ -359,6 +379,8 @@ void Rasterizer::render(GLuint program)
 		ImGui::Checkbox("front-faces", &c.cullFrontface);
 		ImGui::TreePop();
 	}
+
+	ImGui::Checkbox("depth test", &c.depthTest);
 
 	ImGui::End();
 }
