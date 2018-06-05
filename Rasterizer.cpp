@@ -117,10 +117,10 @@ bool setPxDepth(Framebuffer& fb, ivec2 pos, float depth)
 	return false;
 }
 
-void drawLine(Framebuffer& fb, vec2 startf, vec2 endf, vec3 color)
+void drawLine(Framebuffer& fb, vec3 startf, vec3 endf, vec3 color)
 {
-	ivec2 start = ivec2(startf) + 0.5f;
-	ivec2 end = ivec2(endf) + 0.5f;
+	ivec2 start = ivec2(startf.x, startf.y) + 0.5f;
+	ivec2 end = ivec2(endf.x, endf.y) + 0.5f;
 
 	// clip
 	start.x = max(0, start.x);
@@ -209,12 +209,28 @@ vec3 getBarycentric(ivec2 A, ivec2 B, ivec2 C, ivec2 P)
 	return { 1.f - (u.x + u.y) / u.z, u.x / u.z, u.y / u.z };
 }
 
-void drawTriangle(Framebuffer& fb, bool depthTest, vec3 v1f, vec3 v2f, vec3 v3f, vec3 color)
+void drawTriangle(Framebuffer& fb, bool depthTest, bool cullFront, bool cullBack,
+	vec3 v1f, vec3 v2f, vec3 v3f, vec3 color)
 {
+	// face culling, counter-clockwise winding order
+	// negate because we inverted the y in the viewport transformation
+	// I hope this makes sense
+	const bool frontFace = dot(-cross(v3f - v1f, v2f - v1f), vec3(0.f, 0.f, 1.f)) > 0.f;
+	bool render = false;
+
+	if (frontFace && !cullFront)
+		render = true;
+	else if (!frontFace && !cullBack)
+		render = true;
+	
+	if (!render)
+		return;
+
 	ivec2 v1 = ivec2(v1f.x, v1f.y) + 0.5f;
 	ivec2 v2 = ivec2(v2f.x, v2f.y) + 0.5f;
 	ivec2 v3 = ivec2(v3f.x, v3f.y) + 0.5f;
 
+	// finding the boundig box
 	ivec2 bboxStart;
 	ivec2 bboxEnd;
 	bboxStart.x = min(min(v1.x, v2.x), v3.x);
@@ -296,56 +312,58 @@ void Rasterizer::render(GLuint program)
 	// software rendering
 	// @@@@@
 
+	// optional:
+	// * model transform
+	// * view transform
+	// * projection transform
+
+	// todo: linear interpolation with perspective division
 	for (const Face& face : model_.faces)
 	{
+		// todo:
+		// here we are in the clip space, we should clip / discard something
+
+		// clip space (perspective divide) -> NDC
+		// NDC (viewport transform) -> window space (face culling happens here)
+
+		vec3 positions[3];
+
+		for (int i = 0; i < 3; ++i)
+		{
+			vec3& v = positions[i];
+		    v = model_.positions[face.indices[i].position];
+
+			v.y *= -1.f; // this is different than in OpenGL,
+			             // but I like to have 0,0 coordinate in the top-left corner (like in DirectX)
+
+			v = (v + 1.f) / 2.f;
+
+			v.x *= (framebuffer_.size.x - 1.f);
+			v.y *= (framebuffer_.size.y - 1.f);
+		}
+
 		if (c.wireframe)
 		{
 			for (int i = 0; i < 3; ++i)
-			{
-				vec3 v1 = model_.positions[face.indices[i].position];
-				vec3 v2 = model_.positions[face.indices[(i + 1) % 3].position];
-				
-				v1.y *= -1.f;
-				v2.y *= -1.f;
-
-				const vec2 start = (vec2(v1.x, v1.y) + 1.f) * (frame_.fbSize - 1.f) / 2.f;
-				const vec2 end = (vec2(v2.x, v2.y) + 1.f) * (frame_.fbSize - 1.f) / 2.f;
-
-				drawLine(framebuffer_, start, end, { 1.f, 0.f, 1.f });
-			}
+				drawLine(framebuffer_, positions[i], positions[(i + 1) % 3], { 1.f, 0.f, 1.f });
 		}
 		else
 		{
-			vec3 v[3];
-			vec3 vModel[3];
-
-			for (int i = 0; i < 3; ++i)
+			float intensity;
+			// this is a temporary shader
 			{
-				vModel[i] = model_.positions[face.indices[i].position];
+				vec3 vModel[3];
 
-				v[i] = model_.positions[face.indices[i].position];
+				for (int i = 0; i < 3; ++i)
+					vModel[i] = model_.positions[face.indices[i].position];
 
-				v[i].y *= -1.f;
-
-				v[i].x = (v[i].x + 1.f) * (frame_.fbSize.x - 1.f) / 2.f;
-				v[i].y = (v[i].y + 1.f) * (frame_.fbSize.y - 1.f) / 2.f;
+				const vec3 n = normalize(cross(vModel[2] - vModel[0], vModel[1] - vModel[0]));
+				const vec3 lightDir = { 0.f, 0.f, -1.f };
+				intensity = dot(n, -lightDir);
 			}
-
-			const vec3 n = normalize(cross(vModel[2] - vModel[0], vModel[1] - vModel[0]));
-			const vec3 lightDir = { 0.f, 0.f, -1.f };
-			const float intensity = dot(n, lightDir * -1.f);
 			
-			// face culling, counter-clockwise winding order
-			const bool frontFace = intensity > 0.f;
-			bool render = false;
-
-			if (frontFace && !c.cullFrontface)
-				render = true;
-			else if (!frontFace && !c.cullBackface)
-				render = true;
-
-			if(render)
-				drawTriangle(framebuffer_, c.depthTest, v[0], v[1], v[2], vec3(1.f, 1.f, 1.f) * intensity);
+			drawTriangle(framebuffer_, c.depthTest, c.cullFrontface, c.cullBackface,
+				positions[0], positions[1], positions[2], vec3(1.f, 1.f, 1.f) * intensity);
 		}
 	}
 	

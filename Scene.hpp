@@ -50,6 +50,7 @@ struct tvec2
     tvec2 operator+(T v)     const {return {x + v, y + v};}
     tvec2 operator-(tvec2 v) const {return {x - v.x, y - v.y};}
     tvec2 operator-(T v)     const {return {x - v, y - v};}
+	tvec2 operator-()        const {return {-x, -y };}
     tvec2 operator*(tvec2 v) const {return {x * v.x, y * v.y};}
     tvec2 operator*(T v)     const {return {x * v, y * v};}
     tvec2 operator/(tvec2 v) const {return {x / v.x, y / v.y};}
@@ -92,6 +93,7 @@ struct tvec3
     tvec3 operator+(T v)     const {return {x + v, y + v, z + v};}
     tvec3 operator-(tvec3 v) const {return {x - v.x, y - v.y, z - v.z};}
     tvec3 operator-(T v)     const {return {x - v, y - v, z - v};}
+	tvec3 operator-()        const {return {-x, -y, -z};}
     tvec3 operator*(tvec3 v) const {return {x * v.x, y * v.y, z * v.z};}
     tvec3 operator*(T v)     const {return {x * v, y * v, z * v};}
     tvec3 operator/(tvec3 v) const {return {x / v.x, y / v.y, z / v.z};}
