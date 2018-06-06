@@ -27,47 +27,51 @@ constexpr int getSize(T(&)[N])
 }
 
 template<typename T>
-struct tvec2
+struct tvec4
 {
-    tvec2() = default;
-    explicit tvec2(T v): x(v), y(v) {}
-    tvec2(T x, T y): x(x), y(y) {}
+	// todo: create from vec3, vec2, ...
+	// the same for vec3
+    tvec4() = default;
+    explicit tvec4(T v): x(v), y(v), z(v), w(v) {}
+    tvec4(T x, T y, T z, T w): x(x), y(y), z(z), w(w) {}
 
     template<typename U>
-    explicit tvec2(tvec2<U> v): x(v.x), y(v.y) {}
+    explicit tvec4(tvec4<U> v): x(v.x), y(v.y), z(v.z), w(v.w) {}
 
-    //                @ const tvec2& ?
-    tvec2& operator+=(tvec2 v) {x += v.x; y += v.y; return *this;}
-    tvec2& operator+=(T v) {x += v; y += v; return *this;}
-    tvec2& operator-=(tvec2 v) {x -= v.x; y -= v.y; return *this;}
-    tvec2& operator-=(T v) {x -= v; y -= v; return *this;}
-    tvec2& operator*=(tvec2 v) {x *= v.x; y *= v.y; return *this;}
-    tvec2& operator*=(T v) {x *= v; y *= v; return *this;}
-    tvec2& operator/=(tvec2 v) {x /= v.x; y /= v.y; return *this;}
-    tvec2& operator/=(T v) {x /= v; y /= v; return *this;}
+    //                @ const tvec4& ?
+	tvec4& operator+=(tvec4 v) { x += v.x; y += v.y; z += v.z; w += v.w; return *this; }
+	tvec4& operator+=(T v) { x += v; y += v; z += v; w += v; return *this; }
+	tvec4& operator-=(tvec4 v) { x -= v.x; y -= v.y; z -= v.z; w -= v.w; return *this; }
+	tvec4& operator-=(T v) { x -= v; y -= v; z -= v; w -= v; return *this; }
+	tvec4& operator*=(tvec4 v) { x *= v.x; y *= v.y; z *= v.z; w *= v.w; return *this; }
+	tvec4& operator*=(T v) { x *= v; y *= v; z *= v; w *= v; return *this; }
+	tvec4& operator/=(tvec4 v) { x /= v.x; y /= v.y; z /= v.z; w /= v.w;  return *this; }
+	tvec4& operator/=(T v) { x /= v; y /= v; z /= v; w /= v; return *this; }
 
-    tvec2 operator+(tvec2 v) const {return {x + v.x, y + v.y};}
-    tvec2 operator+(T v)     const {return {x + v, y + v};}
-    tvec2 operator-(tvec2 v) const {return {x - v.x, y - v.y};}
-    tvec2 operator-(T v)     const {return {x - v, y - v};}
-	tvec2 operator-()        const {return {-x, -y };}
-    tvec2 operator*(tvec2 v) const {return {x * v.x, y * v.y};}
-    tvec2 operator*(T v)     const {return {x * v, y * v};}
-    tvec2 operator/(tvec2 v) const {return {x / v.x, y / v.y};}
-    tvec2 operator/(T v)     const {return {x / v, y / v};}
+    tvec4 operator+(tvec4 v) const {return {x + v.x, y + v.y, z + v.z, w + v.w};}
+    tvec4 operator+(T v)     const {return {x + v, y + v, z + v, w + v};}
+    tvec4 operator-(tvec4 v) const {return {x - v.x, y - v.y, z - v.z, w - v.w};}
+    tvec4 operator-(T v)     const {return {x - v, y - v, z - v, w - v};}
+	tvec4 operator-()        const {return {-x, -y, -z, -w};}
+    tvec4 operator*(tvec4 v) const {return {x * v.x, y * v.y, z * v.z, w * v.w};}
+    tvec4 operator*(T v)     const {return {x * v, y * v, z * v, w * v};}
+    tvec4 operator/(tvec4 v) const {return {x / v.x, y / v.y, z / v.z, w / v.w};}
+    tvec4 operator/(T v)     const {return {x / v, y / v, z / v, w / v};}
 
-    bool operator==(tvec2 v) const {return x == v.x && y == v.y;}
-    bool operator!=(tvec2 v) const {return !(*this == v);}
+    bool operator==(tvec4 v) const {return x == v.x && y == v.y && z == v.z && w == v.w;}
+    bool operator!=(tvec4 v) const {return !(*this == v);}
 
     T x;
     T y;
+	T z;
+	T w;
 };
 
 template<typename T>
-inline tvec2<T> operator*(T scalar, tvec2<T> v) {return v * scalar;}
+inline tvec4<T> operator*(T scalar, tvec4<T> v) {return v * scalar;}
 
-using ivec2 = tvec2<int>;
-using vec2  = tvec2<float>;
+using ivec4 = tvec4<int>;
+using vec4  = tvec4<float>;
 
 template<typename T>
 struct tvec3
@@ -79,7 +83,10 @@ struct tvec3
     template<typename U>
     explicit tvec3(tvec3<U> v): x(v.x), y(v.y), z(v.z) {}
 
-    //                @ const tvec2& ?
+	template<typename U>
+	explicit tvec3(tvec4<U> v) : x(v.x), y(v.y), z(v.z) {}
+
+    //                @ const tvec3& ?
 	tvec3& operator+=(tvec3 v) { x += v.x; y += v.y; z += v.z; return *this; }
 	tvec3& operator+=(T v) { x += v; y += v; z += v; return *this; }
 	tvec3& operator-=(tvec3 v) { x -= v.x; y -= v.y; z -= v.z; return *this; }
@@ -113,13 +120,54 @@ inline tvec3<T> operator*(T scalar, tvec3<T> v) {return v * scalar;}
 using ivec3 = tvec3<int>;
 using vec3  = tvec3<float>;
 
-struct vec4
+template<typename T>
+struct tvec2
 {
-    float x;
-    float y;
-    float z;
-    float w;
+    tvec2() = default;
+    explicit tvec2(T v): x(v), y(v) {}
+    tvec2(T x, T y): x(x), y(y) {}
+
+    template<typename U>
+    explicit tvec2(tvec2<U> v): x(v.x), y(v.y) {}
+
+	template<typename U>
+	explicit tvec2(tvec4<U> v) : x(v.x), y(v.y) {}
+
+	template<typename U>
+	explicit tvec2(tvec3<U> v) : x(v.x), y(v.y) {}
+
+    //                @ const tvec2& ?
+    tvec2& operator+=(tvec2 v) {x += v.x; y += v.y; return *this;}
+    tvec2& operator+=(T v) {x += v; y += v; return *this;}
+    tvec2& operator-=(tvec2 v) {x -= v.x; y -= v.y; return *this;}
+    tvec2& operator-=(T v) {x -= v; y -= v; return *this;}
+    tvec2& operator*=(tvec2 v) {x *= v.x; y *= v.y; return *this;}
+    tvec2& operator*=(T v) {x *= v; y *= v; return *this;}
+    tvec2& operator/=(tvec2 v) {x /= v.x; y /= v.y; return *this;}
+    tvec2& operator/=(T v) {x /= v; y /= v; return *this;}
+
+    tvec2 operator+(tvec2 v) const {return {x + v.x, y + v.y};}
+    tvec2 operator+(T v)     const {return {x + v, y + v};}
+    tvec2 operator-(tvec2 v) const {return {x - v.x, y - v.y};}
+    tvec2 operator-(T v)     const {return {x - v, y - v};}
+	tvec2 operator-()        const {return {-x, -y };}
+    tvec2 operator*(tvec2 v) const {return {x * v.x, y * v.y};}
+    tvec2 operator*(T v)     const {return {x * v, y * v};}
+    tvec2 operator/(tvec2 v) const {return {x / v.x, y / v.y};}
+    tvec2 operator/(T v)     const {return {x / v, y / v};}
+
+    bool operator==(tvec2 v) const {return x == v.x && y == v.y;}
+    bool operator!=(tvec2 v) const {return !(*this == v);}
+
+    T x;
+    T y;
 };
+
+template<typename T>
+inline tvec2<T> operator*(T scalar, tvec2<T> v) {return v * scalar;}
+
+using ivec2 = tvec2<int>;
+using vec2  = tvec2<float>;
 
 struct FragmentMode
 {
@@ -258,6 +306,8 @@ public:
     } frame_;
 };
 
+// Rasterizer specific vvv
+
 struct RGB8
 {
 	unsigned char r, g, b;
@@ -288,6 +338,39 @@ struct Framebuffer
 	ivec2 size;
 };
 
+class Shader
+{
+public:
+	virtual ~Shader() = default;
+	virtual vec4 vertex(int faceIdx, int triangleVertexIdx) = 0;
+	virtual vec3 fragment(vec3 barycentricCoords) = 0;
+};
+
+// execution: vertex + fragment, next face, vertex + fragment, ...
+class Shader1 : public Shader
+{
+public:
+	vec4 vertex(int faceIdx, int triangleVertexIdx) override;
+	vec3 fragment(vec3 barycentricCoords) override;
+
+	Model* model;
+	float sin, cos;
+	vec3 vNormals[3];
+	vec3 lightDir = { 0.f, 0.f, -1.f };
+};
+
+// NDC is left handed coordinate system (z points into the screen)
+struct RenderCommand
+{
+	Framebuffer* fb;
+	int numFraces;
+	Shader* shader;
+	bool wireframe = false;
+	bool depthTest = true;
+	bool cullFrontFaces = false;
+	bool cullBackFaces = true;
+};
+
 class Rasterizer: public Scene
 {
 public:
@@ -301,4 +384,6 @@ private:
 	GLuint glTexture_;
 	GLBuffers glBuffers_;
 	Model model_;
+	Shader1 shader_;
+	RenderCommand rndCmd_;
 };

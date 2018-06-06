@@ -45,13 +45,7 @@ void loadModel(Model& model, const char* const filename)
 
 		char* start = buf + 2;
 
-		if (buf[0] == 'v')
-		{
-			vec3 pos;
-			assert(sscanf(start, "%f %f %f", &pos.x, &pos.y, &pos.z) == 3);
-			model.positions.pushBack(pos);
-		}
-		else if (strncmp(buf, "vt", 2) == 0)
+		if (strncmp(buf, "vt", 2) == 0)
 		{
 			vec2 texCoord;
 			assert(sscanf(start, "%f %f", &texCoord.x, &texCoord.y) == 2);
@@ -63,6 +57,14 @@ void loadModel(Model& model, const char* const filename)
 			assert(sscanf(start, "%f %f %f", &normal.x, &normal.y, &normal.z) == 3);
 			model.normals.pushBack(normal);
 		}
+		// must be third (so normals and texCoords won't be added here)
+		else if (buf[0] == 'v')
+		{
+			vec3 pos;
+			assert(sscanf(start, "%f %f %f", &pos.x, &pos.y, &pos.z) == 3);
+			model.positions.pushBack(pos);
+		}
+		// the same as in 'v'
 		else if (buf[0] == 'f')
 		{
 			Face face;
@@ -197,7 +199,6 @@ inline float dot(vec2 v1, vec2 v2)
 
 // this is the implementation from tinyrenderer on github
 // todo: study the implementation for scratchpixel
-// + culling might be implemented here?
 vec3 getBarycentric(ivec2 A, ivec2 B, ivec2 C, ivec2 P)
 {
 	vec3 u = cross(vec3(B.x - A.x, C.x - A.x, A.x - P.x), vec3(B.y - A.y, C.y - A.y, A.y - P.y));
@@ -209,23 +210,8 @@ vec3 getBarycentric(ivec2 A, ivec2 B, ivec2 C, ivec2 P)
 	return { 1.f - (u.x + u.y) / u.z, u.x / u.z, u.y / u.z };
 }
 
-void drawTriangle(Framebuffer& fb, bool depthTest, bool cullFront, bool cullBack,
-	vec3 v1f, vec3 v2f, vec3 v3f, vec3 color)
+void drawTriangle(Framebuffer& fb, Shader& shader, bool depthTest, vec3 v1f, vec3 v2f, vec3 v3f)
 {
-	// face culling, counter-clockwise winding order
-	// negate because we inverted the y in the viewport transformation
-	// I hope this makes sense
-	const bool frontFace = dot(-cross(v3f - v1f, v2f - v1f), vec3(0.f, 0.f, 1.f)) > 0.f;
-	bool render = false;
-
-	if (frontFace && !cullFront)
-		render = true;
-	else if (!frontFace && !cullBack)
-		render = true;
-	
-	if (!render)
-		return;
-
 	ivec2 v1 = ivec2(v1f.x, v1f.y) + 0.5f;
 	ivec2 v2 = ivec2(v2f.x, v2f.y) + 0.5f;
 	ivec2 v3 = ivec2(v3f.x, v3f.y) + 0.5f;
@@ -238,7 +224,7 @@ void drawTriangle(Framebuffer& fb, bool depthTest, bool cullFront, bool cullBack
 	bboxEnd.x = max(max(v1.x, v2.x), v3.x);
 	bboxEnd.y = max(max(v1.y, v2.y), v3.y);
 
-	// clipping
+	// clipping, todo: (we shouldn't do this here)
 	bboxStart.x = max(0, bboxStart.x);
 	bboxStart.y = max(0, bboxStart.y);
 	bboxEnd.x = min(fb.size.x - 1, bboxEnd.x);
@@ -257,10 +243,101 @@ void drawTriangle(Framebuffer& fb, bool depthTest, bool cullFront, bool cullBack
 
 			const float depth = b.x * v1f.z + b.y * v2f.z + b.z * v3f.z;
 
-			if(setPxDepth(fb, p, depth) || !depthTest)
-				setPx(fb, p, color);
+			if (setPxDepth(fb, p, depth) || !depthTest)
+				setPx(fb, p, shader.fragment(b));
 		}
 	}
+}
+
+// using 'shaders' instead of inline code visibly slows down the execution
+// todo: linear interpolation with perspective division
+// TODO: are barycentric coordinates in a good order? (we have some serious artifacts)
+//       do a test with a simple triangle and interpolate the colors
+void draw(const RenderCommand& rndCmd)
+{
+	for (int faceIdx = 0; faceIdx < rndCmd.numFraces; ++faceIdx)
+	{
+		// h for homogeneous
+		vec4 hPositions[3];
+
+		for (int i = 0; i < 3; ++i)
+		{
+			hPositions[i] = rndCmd.shader->vertex(faceIdx, i);
+		}
+
+		// todo:
+		// here we are in the clip space, we should clip against the w component
+		// (remember about z)
+
+		// clip space (perspective divide) -> NDC
+		vec3 positions[3];
+		for (int i = 0; i < 3; ++i)
+		{
+			positions[i] = vec3(hPositions[i] / hPositions[i].w);
+		}
+
+		// NDC (viewport transform) -> window space (face culling happens here)
+		for (int i = 0; i < 3; ++i)
+		{
+			vec3& v = positions[i];
+
+			v.y *= -1.f; // this is different than in OpenGL,
+			             // but I like to have 0,0 coordinate in the top-left corner (like in DirectX)
+
+			v = (v + 1.f) / 2.f;
+
+			v.x *= (rndCmd.fb->size.x - 1.f);
+			v.y *= (rndCmd.fb->size.y - 1.f);
+		}
+
+		// face culling, counter-clockwise winding order
+		// negate because we inverted the y in the viewport transformation
+		// I hope this makes sense
+		if(!rndCmd.wireframe)
+		{
+			const bool frontFace = dot(-cross(positions[2] - positions[0], positions[1] - positions[0]),
+				vec3(0.f, 0.f, 1.f)) > 0.f;
+
+			bool render = false;
+
+			if (frontFace && !rndCmd.cullFrontFaces)
+				render = true;
+			else if (!frontFace && !rndCmd.cullBackFaces)
+				render = true;
+
+			if (!render)
+				continue;
+
+        // rasterization
+			drawTriangle(*rndCmd.fb, *rndCmd.shader, rndCmd.depthTest, positions[0], positions[1], positions[2]);
+		}
+		else
+		{
+			for (int i = 0; i < 3; ++i)
+				drawLine(*rndCmd.fb, positions[i], positions[(i + 1) % 3], { 1.f, 0.f, 1.f });
+		}
+	}
+}
+
+vec4 Shader1::vertex(int faceIdx, int vIdx)
+{
+	vec3 pos = model->positions[model->faces[faceIdx].indices[vIdx].position];
+	pos.x = pos.x * cos + pos.z * sin;
+	pos.z = pos.x * -sin + pos.z * cos;
+
+	vNormals[vIdx] = model->normals[model->faces[faceIdx].indices[vIdx].normal];
+	vec3& n = vNormals[vIdx];
+	n.x = n.x * cos + n.z * sin;
+	n.z = n.x * -sin + n.z * cos;
+
+	return vec4(pos.x, pos.y, pos.z, 1.f);
+}
+
+vec3 Shader1::fragment(vec3 b)
+{
+	vec3 n = normalize(vNormals[0] * b.x + vNormals[1] * b.y + vNormals[2] * b.z);
+	const float intensity = dot(n, lightDir);
+	return vec3(max(0.f, intensity));
 }
 
 Rasterizer::Rasterizer()
@@ -271,6 +348,12 @@ Rasterizer::Rasterizer()
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
 
 	loadModel(model_, "res/diablo3_pose/diablo3_pose.obj");
+
+	shader_.model = &model_;
+
+	rndCmd_.fb = &framebuffer_;
+	rndCmd_.shader = &shader_;
+	rndCmd_.numFraces = model_.faces.size();
 }
 
 Rasterizer::~Rasterizer()
@@ -290,84 +373,27 @@ void Rasterizer::processInput(const Array<WinEvent>& events)
 
 void Rasterizer::render(GLuint program)
 {
-	// configuration
-	struct
-	{
-		bool wireframe = false;
-		bool cullBackface = true;
-		bool cullFrontface = false;
-		bool depthTest = true;
-	} static c;
-
 	framebuffer_.colorArray.resize(frame_.fbSize.x * frame_.fbSize.y);
 	framebuffer_.depthArray.resize(frame_.fbSize.x * frame_.fbSize.y);
 	framebuffer_.size = ivec2(frame_.fbSize);
 
+	static vec3 clearColor(0.f);
+
 	for (RGB8& px : framebuffer_.colorArray)
-		px = { 0, 0, 0 };
+		px = toRGB8(clearColor);
 
 	for (float& v : framebuffer_.depthArray)
 		v = FLT_MAX;
 
-	// software rendering
-	// @@@@@
-
-	// optional:
-	// * model transform
-	// * view transform
-	// * projection transform
-
-	// todo: linear interpolation with perspective division
-	for (const Face& face : model_.faces)
 	{
-		// todo:
-		// here we are in the clip space, we should clip / discard something
-
-		// clip space (perspective divide) -> NDC
-		// NDC (viewport transform) -> window space (face culling happens here)
-
-		vec3 positions[3];
-
-		for (int i = 0; i < 3; ++i)
-		{
-			vec3& v = positions[i];
-		    v = model_.positions[face.indices[i].position];
-
-			v.y *= -1.f; // this is different than in OpenGL,
-			             // but I like to have 0,0 coordinate in the top-left corner (like in DirectX)
-
-			v = (v + 1.f) / 2.f;
-
-			v.x *= (framebuffer_.size.x - 1.f);
-			v.y *= (framebuffer_.size.y - 1.f);
-		}
-
-		if (c.wireframe)
-		{
-			for (int i = 0; i < 3; ++i)
-				drawLine(framebuffer_, positions[i], positions[(i + 1) % 3], { 1.f, 0.f, 1.f });
-		}
-		else
-		{
-			float intensity;
-			// this is a temporary shader
-			{
-				vec3 vModel[3];
-
-				for (int i = 0; i < 3; ++i)
-					vModel[i] = model_.positions[face.indices[i].position];
-
-				const vec3 n = normalize(cross(vModel[2] - vModel[0], vModel[1] - vModel[0]));
-				const vec3 lightDir = { 0.f, 0.f, -1.f };
-				intensity = dot(n, -lightDir);
-			}
-			
-			drawTriangle(framebuffer_, c.depthTest, c.cullFrontface, c.cullBackface,
-				positions[0], positions[1], positions[2], vec3(1.f, 1.f, 1.f) * intensity);
-		}
+		static float time = 0.f;
+		time += frame_.time / 6.f;
+		shader_.sin = sinf(time);
+		shader_.cos = cosf(time);
 	}
-	
-	// @@@@@
+
+	// here the magic happens
+	draw(rndCmd_);
 
 	bindProgram(program);
 	uniform1i(program, "mode", FragmentMode::Texture);
@@ -388,17 +414,17 @@ void Rasterizer::render(GLuint program)
 
 	ImGui::Begin("info");
 	ImGui::Text("press Esc to exit");
+	ImGui::ColorEdit3("clear color", &clearColor.x);
 	ImGui::Text("triangles: %d", model_.faces.size());
-	ImGui::Checkbox("wireframe", &c.wireframe);
+	ImGui::Checkbox("wireframe", &rndCmd_.wireframe);
 
 	if (ImGui::TreeNode("cull (counter-clockwise winding order"))
 	{
-		ImGui::Checkbox("back-faces", &c.cullBackface);
-		ImGui::Checkbox("front-faces", &c.cullFrontface);
+		ImGui::Checkbox("back-faces", &rndCmd_.cullBackFaces);
+		ImGui::Checkbox("front-faces", &rndCmd_.cullFrontFaces);
 		ImGui::TreePop();
 	}
 
-	ImGui::Checkbox("depth test", &c.depthTest);
-
+	ImGui::Checkbox("depth test", &rndCmd_.depthTest);
 	ImGui::End();
 }
