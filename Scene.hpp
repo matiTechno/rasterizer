@@ -356,6 +356,7 @@ public:
 	Model* model;
 	float sin, cos;
 	vec3 vNormals[3];
+	bool style2 = false;
 };
 
 // NDC is left handed coordinate system (z points into the screen)

@@ -339,8 +339,22 @@ vec3 Shader1::fragment(vec3 b)
 {
 	vec3 n = normalize(vNormals[0] * b.x + vNormals[1] * b.y + vNormals[2] * b.z);
 	vec3 lightDir = normalize(vec3(0.f, -1.f, -0.5f));
-	const float intensity = dot(n, -lightDir);
-	return vec3(max(0.f, intensity));
+	float intensity = max(0.f, dot(n, -lightDir));
+	vec3 color(1.f);
+
+	if (style2)
+	{
+		if (intensity > 0.85f) intensity = 1.f;
+		else if (intensity > 0.6f) intensity = 0.8f;
+		else if (intensity > 0.45f) intensity = 0.6f;
+		else if (intensity > 0.3f) intensity = 0.45f;
+		else if (intensity > 0.15f) intensity = 0.3f;
+		else intensity = 0.f;
+
+		color = { 1.f, 0.6f, 0.f };
+	}
+
+	return color * intensity;
 }
 
 
@@ -473,5 +487,7 @@ void Rasterizer::render(GLuint program)
 	}
 
 	ImGui::Checkbox("depth test", &rndCmd_.depthTest);
+	ImGui::Checkbox("style2", &shader_.style2);
+
 	ImGui::End();
 }
