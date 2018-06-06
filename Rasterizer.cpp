@@ -251,8 +251,6 @@ void drawTriangle(Framebuffer& fb, Shader& shader, bool depthTest, vec3 v1f, vec
 
 // using 'shaders' instead of inline code visibly slows down the execution
 // todo: linear interpolation with perspective division
-// TODO: are barycentric coordinates in a good order? (we have some serious artifacts)
-//       do a test with a simple triangle and interpolate the colors
 void draw(const RenderCommand& rndCmd)
 {
 	for (int faceIdx = 0; faceIdx < rndCmd.numFraces; ++faceIdx)
@@ -290,12 +288,13 @@ void draw(const RenderCommand& rndCmd)
 			v.y *= (rndCmd.fb->size.y - 1.f);
 		}
 
-		// face culling, counter-clockwise winding order
-		// negate because we inverted the y in the viewport transformation
-		// I hope this makes sense
 		if(!rndCmd.wireframe)
 		{
-			const bool frontFace = dot(-cross(positions[2] - positions[0], positions[1] - positions[0]),
+			// face culling, counter-clockwise winding order
+
+			// negate because we inverted the y in the viewport transformation
+			// I hope this makes sense
+			const bool frontFace = dot(-cross(positions[1] - positions[0], positions[2] - positions[0]),
 				vec3(0.f, 0.f, 1.f)) > 0.f;
 
 			bool render = false;
@@ -319,6 +318,7 @@ void draw(const RenderCommand& rndCmd)
 	}
 }
 
+// BUG: z-fighting (at least visually) at certain angles
 vec4 Shader1::vertex(int faceIdx, int vIdx)
 {
 	vec3 pos = model->positions[model->faces[faceIdx].indices[vIdx].position];
@@ -330,15 +330,38 @@ vec4 Shader1::vertex(int faceIdx, int vIdx)
 	n.x = n.x * cos + n.z * sin;
 	n.z = n.x * -sin + n.z * cos;
 
-	return vec4(pos.x, pos.y, pos.z, 1.f);
+	// we don't use the projection matrix yet, which flips the z so we have to do this here
+	// (to keep depth test correct)
+	return vec4(pos.x, pos.y, -pos.z, 1.f);
 }
 
 vec3 Shader1::fragment(vec3 b)
 {
 	vec3 n = normalize(vNormals[0] * b.x + vNormals[1] * b.y + vNormals[2] * b.z);
-	const float intensity = dot(n, lightDir);
+	vec3 lightDir = normalize(vec3(0.f, -1.f, -0.5f));
+	const float intensity = dot(n, -lightDir);
 	return vec3(max(0.f, intensity));
 }
+
+
+class ShaderTest : public Shader
+{
+public:
+	vec4 vertex(int faceIdx, int vIdx) override
+	{
+		vec3 p = positions[vIdx];
+		return vec4(p.x, p.y, -p.z, 1.f);
+	}
+
+	vec3 fragment(vec3 b) override
+	{
+		return b.x * colors[0] + b.y * colors[1] + b.z * colors[2];
+	}
+
+	// CCW winding
+	vec3 positions[3] = { {-1.f, -1.f, 0.f}, {1.f, -1.f, 0.f}, {0.f, 1.f, 0.f} };
+	vec3 colors[3] = { {1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 1.f } };
+};
 
 Rasterizer::Rasterizer()
 {
@@ -423,6 +446,30 @@ void Rasterizer::render(GLuint program)
 		ImGui::Checkbox("back-faces", &rndCmd_.cullBackFaces);
 		ImGui::Checkbox("front-faces", &rndCmd_.cullFrontFaces);
 		ImGui::TreePop();
+	}
+
+	static bool test = false;
+	static ShaderTest tshader;
+
+	if (ImGui::TreeNode("test"))
+	{
+		ImGui::Checkbox("enable", &test);
+		ImGui::Text("counter-clockwise winding");
+		ImGui::Text("v0 (left)   - red");
+		ImGui::Text("v1 (right)  - green");
+		ImGui::Text("v2 (middle) - blue");
+		ImGui::TreePop();
+	}
+
+	if (test)
+	{
+		rndCmd_.shader = &tshader;
+		rndCmd_.numFraces = 1;
+	}
+	else
+	{
+		rndCmd_.shader = &shader_;
+		rndCmd_.numFraces = model_.faces.size();
 	}
 
 	ImGui::Checkbox("depth test", &rndCmd_.depthTest);
