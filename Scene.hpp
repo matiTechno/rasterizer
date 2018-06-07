@@ -323,12 +323,36 @@ struct Face
 	Index indices[3];
 };
 
+// 'Texture' is used for a gpu texture...
+struct Bitmap
+{
+	vec3 sample(vec2 texCoord) 
+	{
+		assert(0.f <= texCoord.x <= 1.f);
+		assert(0.f <= texCoord.y <= 1.f);
+
+		if (!data)
+			return {0.f, 1.f, 0.f};
+
+		ivec2 pos = ivec2(texCoord * vec2(size - 1));
+		RGB8 texel = data[pos.y * size.x + pos.x];
+		return { texel.r / 255.f, texel.g / 255.f, texel.b / 255.f };
+	}
+
+	RGB8* data;
+	ivec2 size;
+};
+
+void loadBitmapFromFile(Bitmap& bitmap, const char* filename);
+void deleteBitmap(Bitmap& bitmap);
+
 struct Model
 {
 	Array<Face> faces;
 	Array<vec3> positions;
 	Array<vec2> texCoords;
 	Array<vec3> normals;
+	Bitmap diffuseTexture;
 };
 
 struct Framebuffer
@@ -356,6 +380,7 @@ public:
 	Model* model;
 	float sin, cos;
 	vec3 vNormals[3];
+	vec2 vTexCoords[3];
 	bool style2 = false;
 };
 

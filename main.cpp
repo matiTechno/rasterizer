@@ -23,6 +23,22 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+void loadBitmapFromFile(Bitmap& bitmap, const char* filename)
+{
+	stbi_set_flip_vertically_on_load(true);
+	bitmap.data = (RGB8*)stbi_load(filename, &bitmap.size.x, &bitmap.size.y, nullptr, 3);
+
+	if (!bitmap.data)
+		printf("stbi_load() failed: %s\n", filename);
+}
+
+void deleteBitmap(Bitmap& bitmap)
+{
+	if(bitmap.data)
+		stbi_image_free(bitmap.data);
+}
+
+
 static GLint getUniformLocation(GLuint program, const char* const name)
 {
     GLint loc = glGetUniformLocation(program, name);

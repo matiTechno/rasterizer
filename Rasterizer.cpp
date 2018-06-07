@@ -330,17 +330,19 @@ vec4 Shader1::vertex(int faceIdx, int vIdx)
 	n.x = n.x * cos + n.z * sin;
 	n.z = n.x * -sin + n.z * cos;
 
+	vTexCoords[vIdx] = model->texCoords[model->faces[faceIdx].indices[vIdx].texCoord];
+
 	// we don't use the projection matrix yet, which flips the z so we have to do this here
-	// (to keep depth test correct)
+	// (to keep the depth test correct)
 	return vec4(pos.x, pos.y, -pos.z, 1.f);
 }
 
 vec3 Shader1::fragment(vec3 b)
 {
 	vec3 n = normalize(vNormals[0] * b.x + vNormals[1] * b.y + vNormals[2] * b.z);
-	vec3 lightDir = normalize(vec3(0.f, -1.f, -0.5f));
+	vec3 lightDir = normalize(vec3(0.f, 0.f, -1.f));
 	float intensity = max(0.f, dot(n, -lightDir));
-	vec3 color(1.f);
+	vec3 color;
 
 	if (style2)
 	{
@@ -352,6 +354,11 @@ vec3 Shader1::fragment(vec3 b)
 		else intensity = 0.f;
 
 		color = { 1.f, 0.6f, 0.f };
+	}
+	else
+	{
+		vec2 tc = b.x * vTexCoords[0] + b.y * vTexCoords[1] + b.z * vTexCoords[2];
+		color = model->diffuseTexture.sample(tc);
 	}
 
 	return color * intensity;
@@ -385,6 +392,7 @@ Rasterizer::Rasterizer()
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
 
 	loadModel(model_, "res/diablo3_pose/diablo3_pose.obj");
+	loadBitmapFromFile(model_.diffuseTexture, "res/diablo3_pose/diablo3_pose_diffuse.tga");
 
 	shader_.model = &model_;
 
@@ -395,6 +403,7 @@ Rasterizer::Rasterizer()
 
 Rasterizer::~Rasterizer()
 {
+	deleteBitmap(model_.diffuseTexture);
 	deleteGLBuffers(glBuffers_);
 	glDeleteTextures(1, &glTexture_);
 }
