@@ -27,6 +27,12 @@ constexpr int getSize(T(&)[N])
 }
 
 template<typename T>
+struct tvec3;
+
+template<typename T>
+struct tvec2;
+
+template<typename T>
 struct tvec4
 {
 	// todo: create from vec3, vec2, ...
@@ -34,6 +40,11 @@ struct tvec4
     tvec4() = default;
     explicit tvec4(T v): x(v), y(v), z(v), w(v) {}
     tvec4(T x, T y, T z, T w): x(x), y(y), z(z), w(w) {}
+	tvec4(const tvec3<T>& v, T w);
+	tvec4(T x, const tvec3<T>& v);
+	tvec4(const tvec2<T>& v1, const tvec2<T>& v2);
+	tvec4(const tvec2<T>& v, T z, T w);
+	tvec4(T x, T y, const tvec2<T>& v);
 
     template<typename U>
     explicit tvec4(tvec4<U> v): x(v.x), y(v.y), z(v.z), w(v.w) {}
@@ -57,6 +68,7 @@ struct tvec4
     tvec4 operator*(T v)     const {return {x * v, y * v, z * v, w * v};}
     tvec4 operator/(tvec4 v) const {return {x / v.x, y / v.y, z / v.z, w / v.w};}
     tvec4 operator/(T v)     const {return {x / v, y / v, z / v, w / v};}
+	T     operator[](int idx)const {return *(&x + idx);}
 
     bool operator==(tvec4 v) const {return x == v.x && y == v.y && z == v.z && w == v.w;}
     bool operator!=(tvec4 v) const {return !(*this == v);}
@@ -79,6 +91,8 @@ struct tvec3
     tvec3() = default;
     explicit tvec3(T v): x(v), y(v), z(v) {}
     tvec3(T x, T y, T z): x(x), y(y), z(z) {}
+	tvec3(T x, const tvec2<T>& v);
+	tvec3(const tvec2<T>& v, T z);
 
     template<typename U>
     explicit tvec3(tvec3<U> v): x(v.x), y(v.y), z(v.z) {}
@@ -105,6 +119,7 @@ struct tvec3
     tvec3 operator*(T v)     const {return {x * v, y * v, z * v};}
     tvec3 operator/(tvec3 v) const {return {x / v.x, y / v.y, z / v.z};}
     tvec3 operator/(T v)     const {return {x / v, y / v, z / v};}
+	T     operator[](int idx)const {return *(&x + idx);}
 
     bool operator==(tvec3 v) const {return x == v.x && y == v.y && z == v.z;}
     bool operator!=(tvec3 v) const {return !(*this == v);}
@@ -155,6 +170,7 @@ struct tvec2
     tvec2 operator*(T v)     const {return {x * v, y * v};}
     tvec2 operator/(tvec2 v) const {return {x / v.x, y / v.y};}
     tvec2 operator/(T v)     const {return {x / v, y / v};}
+	T     operator[](int idx)const {return *(&x + idx);}
 
     bool operator==(tvec2 v) const {return x == v.x && y == v.y;}
     bool operator!=(tvec2 v) const {return !(*this == v);}
@@ -168,6 +184,27 @@ inline tvec2<T> operator*(T scalar, tvec2<T> v) {return v * scalar;}
 
 using ivec2 = tvec2<int>;
 using vec2  = tvec2<float>;
+
+template<typename T>
+inline tvec4<T>::tvec4(const tvec3<T>& v, T w) : x(v.x), y(v.y), z(v.z), w(w) {}
+
+template<typename T>
+inline tvec4<T>::tvec4(T x, const tvec3<T>& v) : x(x), y(v.x), z(v.y), w(v.z) {}
+
+template<typename T>
+inline tvec4<T>::tvec4(const tvec2<T>& v1, const tvec2<T>& v2) : x(v1.x), y(v1.y), z(v2.x), w(v2.y) {}
+
+template<typename T>
+inline tvec4<T>::tvec4(const tvec2<T>& v, T z, T w) : x(v.x), y(v.y), z(z), w(w) {}
+
+template<typename T>
+inline tvec4<T>::tvec4(T x, T y, const tvec2<T>& v) : x(x), y(y), z(v.x), w(v.y) {}
+
+template<typename T>
+inline tvec3<T>::tvec3(T x, const tvec2<T>& v) : x(x), y(v.x), z(v.y) {}
+
+template<typename T>
+inline tvec3<T>::tvec3(const tvec2<T>& v, T z) : x(v.x), y(v.y), z(z) {}
 
 struct FragmentMode
 {
@@ -328,8 +365,8 @@ struct Bitmap
 {
 	vec3 sample(vec2 texCoord) 
 	{
-		assert(0.f <= texCoord.x <= 1.f);
-		assert(0.f <= texCoord.y <= 1.f);
+		assert(0.f <= texCoord.x && texCoord.x <= 1.f);
+		assert(0.f <= texCoord.y && texCoord.y <= 1.f);
 
 		if (!data)
 			return {0.f, 1.f, 0.f};
