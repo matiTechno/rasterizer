@@ -2,6 +2,7 @@
 
 #include "Array.hpp"
 #include "float.h"
+#include <math.h>
 
 template<typename T>
 inline T max(T a, T b) {return a > b ? a : b;}
@@ -206,6 +207,114 @@ inline tvec3<T>::tvec3(T x, const tvec2<T>& v) : x(x), y(v.x), z(v.y) {}
 template<typename T>
 inline tvec3<T>::tvec3(const tvec2<T>& v, T z) : x(v.x), y(v.y), z(z) {}
 
+vec3 cross(vec3 v, vec3 w)
+{
+	return  {
+		v.y * w.z - v.z * w.y,
+		v.z * w.x - v.x * w.z,
+		v.x * w.y - v.y * w.x
+	};
+}
+
+inline float length(vec2 v)
+{
+	return sqrtf(v.x * v.x + v.y * v.y);
+}
+
+inline float length(vec3 v)
+{
+	return sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
+}
+
+inline vec2 normalize(vec2 v)
+{
+	return v * (1.f / length(v));
+}
+
+inline vec3 normalize(vec3 v)
+{
+	return v * (1.f / length(v));
+}
+
+inline float dot(vec3 v1, vec3 v2)
+{
+	return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+}
+
+inline float dot(vec2 v1, vec2 v2)
+{
+	return v1.x * v2.x + v1.y * v2.y;
+}
+
+// n must be normalized - we are reflecting around the normal
+inline vec3 reflect(vec3 toReflect, vec3 n)
+{
+	return dot(toReflect, n) * n * 2 - toReflect;
+}
+
+struct Mat4
+{
+	vec4 i = { 1.f, 0.f, 0.f, 0.f };
+	vec4 j = { 0.f, 1.f, 0.f, 0.f };
+	vec4 k = { 0.f, 0.f, 1.f, 0.f };
+	vec4 h = { 0.f, 0.f, 0.f, 1.f };
+};
+
+vec4 operator*(const Mat4& m, vec4 v)
+{
+	return m.i * v.x + m.j * v.y + m.k * v.z + m.h * v.w;
+}
+
+Mat4 operator*(const Mat4& ml, const Mat4& mr)
+{
+	Mat4 m;
+	m.i = ml * mr.i;
+	m.j = ml * mr.j;
+	m.k = ml * mr.k;
+	m.h = ml * mr.h;
+	return m;
+}
+
+Mat4 translate(vec3 v)
+{
+	Mat4 m;
+	m.h = vec4(v, 1.f);
+	return m;
+}
+
+Mat4 transpose(const Mat4& m)
+{
+	Mat4 mt;
+	mt.i = { m.i.x, m.j.x, m.k.x, m.h.x };
+	mt.j = { m.i.y, m.j.y, m.k.y, m.h.y };
+	mt.k = { m.i.z, m.j.z, m.k.z, m.h.z };
+	mt.h = { m.i.w, m.j.w, m.k.w, m.h.w };
+	return mt;
+}
+
+Mat4 lookAt(vec3 pos, vec3 target, vec3 up)
+{
+	vec3 k = -normalize(target - pos);
+	vec3 i = normalize(cross(up, k));
+	vec3 j = cross(k, i);
+
+	Mat4 basis;
+	basis.i = vec4(i, 0.f);
+	basis.j = vec4(j, 0.f);
+	basis.k = vec4(k, 0.f);
+	
+	// change of a basis matrix is orthogonal (i, j, k, h are unit vectors and are perpendicular)
+    // so inverse equals transpose (but I don't know the details)
+	Mat4 bInverse = transpose(basis);
+	return bInverse * translate(-pos);
+}
+
+Mat4 lookAt(vec3 pos, float pitch, float yaw)
+{
+	vec3 target;
+	return lookAt(pos, target, { 0.f, 1.f, 0.f });
+}
+
 struct FragmentMode
 {
     enum
@@ -390,6 +499,7 @@ struct Model
 	Array<vec2> texCoords;
 	Array<vec3> normals;
 	Bitmap diffuseTexture;
+	Bitmap specularTexture;
 };
 
 struct Framebuffer
@@ -415,10 +525,11 @@ public:
 	vec3 fragment(vec3 barycentricCoords) override;
 
 	Model* model;
-	float sin, cos;
+	float sin = 0.f, cos = 1.f;
 	vec3 vNormals[3];
 	vec2 vTexCoords[3];
 	bool style2 = false;
+	//vec3 vPositions[3];
 };
 
 // NDC is left handed coordinate system (z points into the screen)

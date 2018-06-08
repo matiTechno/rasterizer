@@ -100,6 +100,11 @@ void setPx(Framebuffer& fb, ivec2 pos, vec3 color)
 {
 	assert(fb.size.x > pos.x);
 	assert(fb.size.y > pos.y);
+
+	color.x = max(min(color.x, 1.f), 0.f);
+	color.y = max(min(color.y, 1.f), 0.f);
+	color.z = max(min(color.z, 1.f), 0.f);
+
 	fb.colorArray[fb.size.x * pos.y + pos.x] = toRGB8(color);
 }
 
@@ -156,45 +161,6 @@ void drawLine(Framebuffer& fb, vec3 startf, vec3 endf, vec3 color)
 			setPx(fb, { x, y }, color);
 
 	}
-}
-
-vec3 cross(vec3 v, vec3 w)
-{
-	return  {
-		v.y * w.z - v.z * w.y,
-		v.z * w.x - v.x * w.z,
-		v.x * w.y - v.y * w.x
-	};
-}
-
-inline float length(vec2 v)
-{
-	return sqrtf(v.x * v.x + v.y * v.y);
-}
-
-inline float length(vec3 v)
-{
-	return sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
-}
-
-inline vec2 normalize(vec2 v)
-{
-	return v * (1.f / length(v));
-}
-
-inline vec3 normalize(vec3 v)
-{
-	return v * (1.f / length(v));
-}
-
-inline float dot(vec3 v1, vec3 v2)
-{
-	return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
-}
-
-inline float dot(vec2 v1, vec2 v2)
-{
-	return v1.x * v2.x + v1.y * v2.y;
 }
 
 // this is the implementation from tinyrenderer on github
@@ -265,7 +231,24 @@ void draw(const RenderCommand& rndCmd)
 
 		// todo:
 		// here we are in the clip space, we should clip against the w component
-		// (remember about z)
+		// this is very 'incomplete' implementation...
+
+		for (int i = 0; i < 3; ++i)
+		{
+			bool clip = true;
+
+			for (vec4& vertex: hPositions)
+			{
+				if (-vertex.w < vertex[i] && vertex[i] < vertex.w)
+				{
+					clip = false;
+					break;
+				}
+			}
+
+			if (clip)
+				continue;
+		}
 
 		// clip space (perspective divide) -> NDC
 		vec3 positions[3];
@@ -318,12 +301,35 @@ void draw(const RenderCommand& rndCmd)
 	}
 }
 
+vec3 interpolate(vec3* verts, vec3 baricentricCoords)
+{
+	vec3 v(0.f);
+	for (int i = 0; i < 3; ++i)
+	{
+		v += verts[i] * baricentricCoords[i];
+	}
+	return v;
+}
+
+vec2 interpolate(vec2* verts, vec3 baricentricCoords)
+{
+	vec2 v(0.f);
+	for (int i = 0; i < 3; ++i)
+	{
+		v += verts[i] * baricentricCoords[i];
+	}
+	return v;
+}
+
 // BUG: z-fighting (at least visually) at certain angles
+// todo: normals need to go under a special tranformation, transpose(inverse(modelM)) * n
+//       so the scaling operation will preserve normal direction
 vec4 Shader1::vertex(int faceIdx, int vIdx)
 {
 	vec3 pos = model->positions[model->faces[faceIdx].indices[vIdx].position];
 	pos.x = pos.x * cos + pos.z * sin;
 	pos.z = pos.x * -sin + pos.z * cos;
+	//vPositions[vIdx] = pos;
 
 	vNormals[vIdx] = model->normals[model->faces[faceIdx].indices[vIdx].normal];
 	vec3& n = vNormals[vIdx];
@@ -334,15 +340,15 @@ vec4 Shader1::vertex(int faceIdx, int vIdx)
 
 	// we don't use the projection matrix yet, which flips the z so we have to do this here
 	// (to keep the depth test correct)
-	return vec4(pos.x, pos.y, -pos.z, 1.f);
+	return lookAt(vec3(0.f, 0.f, 5.f), vec3(0.f, 0.f, -1.f), vec3(0.f, 1.f, 0.f))
+		* vec4(pos.x, pos.y, -pos.z, 1.f);
 }
 
 vec3 Shader1::fragment(vec3 b)
 {
-	vec3 n = normalize(vNormals[0] * b.x + vNormals[1] * b.y + vNormals[2] * b.z);
+	vec3 n = normalize(interpolate(vNormals, b)); // I think normalization after inteprolation might make sense
 	vec3 lightDir = normalize(vec3(0.f, 0.f, -1.f));
 	float intensity = max(0.f, dot(n, -lightDir));
-	vec3 color;
 
 	if (style2)
 	{
@@ -353,15 +359,28 @@ vec3 Shader1::fragment(vec3 b)
 		else if (intensity > 0.15f) intensity = 0.3f;
 		else intensity = 0.f;
 
-		color = { 1.f, 0.6f, 0.f };
+		return vec3(1.f, 0.6f, 0.f) * intensity;
 	}
-	else
-	{
-		vec2 tc = b.x * vTexCoords[0] + b.y * vTexCoords[1] + b.z * vTexCoords[2];
-		color = model->diffuseTexture.sample(tc);
-	}
+	
+	// this is Phong lighting model (without ambient)
 
-	return color * intensity;
+	const vec2 tc = interpolate(vTexCoords, b);
+	vec3 color = model->diffuseTexture.sample(tc) * intensity;
+
+	// commented out because doesn't work :)
+	// todo: maybe our specular map is in fact specular shininess map as suggested in the tutorial
+	/*
+	const vec3 reflectedLight = reflect(lightDir, n);
+	const vec3 fragPos = interpolate(vPositions, b);
+	const vec3 eyePos = { 0.f, 0.f, 5.f };
+	const vec3 viewDir = normalize(fragPos - eyePos);
+	const float shininess = 32.f;
+	//TOOD: Blinn-Phong
+	const float specularIntensity = powf(max(0.f, dot(-viewDir, reflectedLight)), shininess);
+	const vec3 specularColor = model->specularTexture.sample(tc);
+	*/
+
+	return color;
 }
 
 
@@ -376,7 +395,7 @@ public:
 
 	vec3 fragment(vec3 b) override
 	{
-		return b.x * colors[0] + b.y * colors[1] + b.z * colors[2];
+		return interpolate(colors, b);
 	}
 
 	// CCW winding
@@ -393,6 +412,7 @@ Rasterizer::Rasterizer()
 
 	loadModel(model_, "res/diablo3_pose/diablo3_pose.obj");
 	loadBitmapFromFile(model_.diffuseTexture, "res/diablo3_pose/diablo3_pose_diffuse.tga");
+	loadBitmapFromFile(model_.specularTexture, "res/diablo3_pose/diablo3_pose_spec.tga");
 
 	shader_.model = &model_;
 
@@ -404,6 +424,7 @@ Rasterizer::Rasterizer()
 Rasterizer::~Rasterizer()
 {
 	deleteBitmap(model_.diffuseTexture);
+	deleteBitmap(model_.specularTexture);
 	deleteGLBuffers(glBuffers_);
 	glDeleteTextures(1, &glTexture_);
 }
@@ -431,6 +452,8 @@ void Rasterizer::render(GLuint program)
 	for (float& v : framebuffer_.depthArray)
 		v = FLT_MAX;
 
+	static bool rotate = false;
+	if(rotate)
 	{
 		static float time = 0.f;
 		time += frame_.time / 6.f;
@@ -462,6 +485,7 @@ void Rasterizer::render(GLuint program)
 	ImGui::Text("press Esc to exit");
 	ImGui::ColorEdit3("clear color", &clearColor.x);
 	ImGui::Text("triangles: %d", model_.faces.size());
+	ImGui::Checkbox("rotate model", &rotate);
 	ImGui::Checkbox("wireframe", &rndCmd_.wireframe);
 
 	if (ImGui::TreeNode("cull (counter-clockwise winding order"))
