@@ -462,6 +462,8 @@ int getRandomInt(const int min, const int max)
     return min + rand() / (RAND_MAX / (max - min + 1) + 1);
 }
 
+extern GLFWwindow* gWindow;
+
 int main()
 {
     glfwSetErrorCallback(errorCallback);
@@ -486,6 +488,8 @@ int main()
         glfwTerminate();
         return EXIT_FAILURE;
     }
+
+	gWindow = window;
 
     // @TODO(matiTechno): do a research on rngs, shuffle bag (rand() might not be good enough)
     srand(time(nullptr));

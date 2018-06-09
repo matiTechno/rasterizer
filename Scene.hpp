@@ -252,7 +252,7 @@ inline vec3 reflect(vec3 toReflect, vec3 n)
 	return dot(toReflect, n) * n * 2 - toReflect;
 }
 
-struct Mat4
+struct mat4
 {
 	vec4 i = { 1.f, 0.f, 0.f, 0.f };
 	vec4 j = { 0.f, 1.f, 0.f, 0.f };
@@ -260,14 +260,14 @@ struct Mat4
 	vec4 h = { 0.f, 0.f, 0.f, 1.f };
 };
 
-vec4 operator*(const Mat4& m, vec4 v)
+vec4 operator*(const mat4& m, vec4 v)
 {
 	return m.i * v.x + m.j * v.y + m.k * v.z + m.h * v.w;
 }
 
-Mat4 operator*(const Mat4& ml, const Mat4& mr)
+mat4 operator*(const mat4& ml, const mat4& mr)
 {
-	Mat4 m;
+	mat4 m;
 	m.i = ml * mr.i;
 	m.j = ml * mr.j;
 	m.k = ml * mr.k;
@@ -275,16 +275,16 @@ Mat4 operator*(const Mat4& ml, const Mat4& mr)
 	return m;
 }
 
-Mat4 translate(vec3 v)
+mat4 translate(vec3 v)
 {
-	Mat4 m;
+	mat4 m;
 	m.h = vec4(v, 1.f);
 	return m;
 }
 
-Mat4 transpose(const Mat4& m)
+mat4 transpose(const mat4& m)
 {
-	Mat4 mt;
+	mat4 mt;
 	mt.i = { m.i.x, m.j.x, m.k.x, m.h.x };
 	mt.j = { m.i.y, m.j.y, m.k.y, m.h.y };
 	mt.k = { m.i.z, m.j.z, m.k.z, m.h.z };
@@ -292,27 +292,28 @@ Mat4 transpose(const Mat4& m)
 	return mt;
 }
 
-Mat4 lookAt(vec3 pos, vec3 target, vec3 up)
+mat4 lookAt(vec3 pos, vec3 target, vec3 up)
 {
 	vec3 k = -normalize(target - pos);
 	vec3 i = normalize(cross(up, k));
 	vec3 j = cross(k, i);
 
-	Mat4 basis;
+	mat4 basis;
 	basis.i = vec4(i, 0.f);
 	basis.j = vec4(j, 0.f);
 	basis.k = vec4(k, 0.f);
 	
 	// change of a basis matrix is orthogonal (i, j, k, h are unit vectors and are perpendicular)
     // so inverse equals transpose (but I don't know the details)
-	Mat4 bInverse = transpose(basis);
+	mat4 bInverse = transpose(basis);
 	return bInverse * translate(-pos);
 }
 
-Mat4 lookAt(vec3 pos, float pitch, float yaw)
+#define Pi 3.14159265359f
+
+inline float toRadians(float degrees)
 {
-	vec3 target;
-	return lookAt(pos, target, { 0.f, 1.f, 0.f });
+	return degrees / 360.f * 2.f * Pi;
 }
 
 struct FragmentMode
@@ -452,6 +453,9 @@ public:
     } frame_;
 };
 
+struct GLFWwindow;
+GLFWwindow* gWindow;
+
 // Rasterizer specific vvv
 
 struct RGB8
@@ -529,6 +533,7 @@ public:
 	vec3 vNormals[3];
 	vec2 vTexCoords[3];
 	bool style2 = false;
+	mat4 viewMatrix;
 	//vec3 vPositions[3];
 };
 
@@ -542,6 +547,57 @@ struct RenderCommand
 	bool depthTest = true;
 	bool cullFrontFaces = false;
 	bool cullBackFaces = true;
+};
+
+class Camera3d
+{
+public:
+	Camera3d();
+
+	void captureMouse(); // off on start
+	void processEvent(const WinEvent& event);
+	// process events first
+	void update(float time);
+	void imgui() const;
+
+	vec3 eye = { 0.f, 0.f, 3.f };
+	vec3 up = { 0.f, 1.f, 0.f };
+	float speed = 2.f;
+	float sensitivity = 0.1f; // degrees / screen coordinates
+	                          // from GLFW - screen coordinates are not always pixels
+	// degrees
+	float pitch = 0.f;
+	float yaw = 0.f;
+
+	// get after update()
+	mat4 view;
+
+private:
+	enum
+	{
+		Forward,
+		Back,
+		Left,
+		Right,
+		Up,
+		Down,
+		ToggleMouseCapture,
+		NumControls
+	};
+
+	int controls_[NumControls];
+
+	struct
+	{
+		bool pressed[NumControls] = {};
+		bool held[NumControls] = {};
+	} keys_;
+
+	vec2 cursorPos_;
+	bool mouseCapture_ = false;
+	bool firstCursorEvent_;
+
+	bool cActive(int control) const { return keys_.pressed[control] || keys_.held[control];}
 };
 
 class Rasterizer: public Scene
@@ -559,4 +615,5 @@ private:
 	Model model_;
 	Shader1 shader_;
 	RenderCommand rndCmd_;
+	Camera3d camera_;
 };

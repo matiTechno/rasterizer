@@ -129,7 +129,7 @@ void drawLine(Framebuffer& fb, vec3 startf, vec3 endf, vec3 color)
 	ivec2 start = ivec2(startf.x, startf.y) + 0.5f;
 	ivec2 end = ivec2(endf.x, endf.y) + 0.5f;
 
-	// clip
+	// clamping, todo: the same as in drawTriangle
 	start.x = max(0, start.x);
 	start.x = min(fb.size.x - 1, start.x);
 	start.y = max(0, start.y);
@@ -190,7 +190,8 @@ void drawTriangle(Framebuffer& fb, Shader& shader, bool depthTest, vec3 v1f, vec
 	bboxEnd.x = max(max(v1.x, v2.x), v3.x);
 	bboxEnd.y = max(max(v1.y, v2.y), v3.y);
 
-	// clipping, todo: (we shouldn't do this here)
+	// clamping, todo: we shouldn't do this here, it's a job for a clipper, also clamping deforms
+	// triangles which is bad
 	bboxStart.x = max(0, bboxStart.x);
 	bboxStart.y = max(0, bboxStart.y);
 	bboxEnd.x = min(fb.size.x - 1, bboxEnd.x);
@@ -232,23 +233,30 @@ void draw(const RenderCommand& rndCmd)
 		// todo:
 		// here we are in the clip space, we should clip against the w component
 		// this is very 'incomplete' implementation...
-
+		bool clip = false;
 		for (int i = 0; i < 3; ++i)
 		{
-			bool clip = true;
-
-			for (vec4& vertex: hPositions)
+			bool coordOutOfRange = true;
+			for (vec4& pos : hPositions)
 			{
-				if (-vertex.w < vertex[i] && vertex[i] < vertex.w)
+				// if a ith-coordinate of a pos is in the visible range then ...
+				if (-pos.w < pos[i] && pos[i] < pos.w)
 				{
-					clip = false;
+					coordOutOfRange = false;
 					break;
 				}
 			}
 
-			if (clip)
-				continue;
+			if (coordOutOfRange)
+			{
+				clip = true;
+				break;
+			}
 		}
+
+		// start using when we start applying the projection matrix
+		//if (clip)
+			//continue;
 
 		// clip space (perspective divide) -> NDC
 		vec3 positions[3];
@@ -340,8 +348,7 @@ vec4 Shader1::vertex(int faceIdx, int vIdx)
 
 	// we don't use the projection matrix yet, which flips the z so we have to do this here
 	// (to keep the depth test correct)
-	return lookAt(vec3(0.f, 0.f, 5.f), vec3(0.f, 0.f, -1.f), vec3(0.f, 1.f, 0.f))
-		* vec4(pos.x, pos.y, -pos.z, 1.f);
+	return viewMatrix * vec4(pos.x, pos.y, -pos.z, 1.f);
 }
 
 vec3 Shader1::fragment(vec3 b)
@@ -435,6 +442,8 @@ void Rasterizer::processInput(const Array<WinEvent>& events)
 	{
 		if (e.type == WinEvent::Type::Key && e.key.key == GLFW_KEY_ESCAPE && e.key.action == GLFW_PRESS)
 			frame_.popMe = true;
+
+		camera_.processEvent(e);
 	}
 }
 
@@ -461,6 +470,9 @@ void Rasterizer::render(GLuint program)
 		shader_.cos = cosf(time);
 	}
 
+	camera_.update(frame_.time);
+	shader_.viewMatrix = camera_.view;
+
 	// here the magic happens
 	draw(rndCmd_);
 
@@ -483,6 +495,7 @@ void Rasterizer::render(GLuint program)
 
 	ImGui::Begin("info");
 	ImGui::Text("press Esc to exit");
+	camera_.imgui();
 	ImGui::ColorEdit3("clear color", &clearColor.x);
 	ImGui::Text("triangles: %d", model_.faces.size());
 	ImGui::Checkbox("rotate model", &rotate);
@@ -523,4 +536,115 @@ void Rasterizer::render(GLuint program)
 	ImGui::Checkbox("style2", &shader_.style2);
 
 	ImGui::End();
+}
+
+Camera3d::Camera3d()
+{
+	controls_[Forward] = GLFW_KEY_W;
+	controls_[Back] = GLFW_KEY_S;
+	controls_[Left] = GLFW_KEY_A;
+	controls_[Right] = GLFW_KEY_D;
+	controls_[Up] = GLFW_KEY_SPACE;
+	controls_[Down] = GLFW_KEY_LEFT_SHIFT;
+	controls_[ToggleMouseCapture] = GLFW_KEY_1;
+}
+
+void Camera3d::captureMouse()
+{
+	glfwSetInputMode(gWindow, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+	firstCursorEvent_ = true;
+	mouseCapture_ = true;
+}
+
+void Camera3d::processEvent(const WinEvent& event)
+{
+	if (event.type == WinEvent::Key)
+	{
+		int idx = -1;
+		for (int i = 0; i < NumControls; ++i)
+		{
+			if (event.key.key == controls_[i])
+			{
+				idx = i;
+				break;
+			}
+		}
+
+		if (idx == -1)
+			return;
+
+		if (event.key.action == GLFW_PRESS)
+		{
+			keys_.pressed[idx] = true;
+			keys_.held[idx] = true;
+
+			if (idx == ToggleMouseCapture)
+			{
+				if (!mouseCapture_)
+					captureMouse();
+				else
+				{
+					mouseCapture_ = false;
+					glfwSetInputMode(gWindow, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+				}
+			}
+		}
+		else if (event.key.action == GLFW_RELEASE)
+		{
+			keys_.held[idx] = false;
+		}
+	}
+	else if (event.type == WinEvent::Cursor && mouseCapture_)
+	{
+		const vec2 offset = event.cursor.pos - cursorPos_;
+		cursorPos_ = event.cursor.pos;
+
+		if (!firstCursorEvent_)
+		{
+			pitch -= offset.y * sensitivity;
+			pitch = min(89.f, pitch);
+			pitch = max(-89.f, pitch);
+			yaw = fmodf(yaw - offset.x * sensitivity, 360.f);
+		}
+		else
+			firstCursorEvent_ = false;
+	}
+}
+
+void Camera3d::update(const float time)
+{
+	const vec3 dir = normalize( vec3(
+		cosf(toRadians(pitch)) * sinf(toRadians(yaw)) * -1.f,
+		sinf(toRadians(pitch)),
+		cosf(toRadians(pitch)) * cosf(toRadians(yaw)) * -1.f));
+
+	vec3 moveDir(0.f);
+
+	if (cActive(Forward)) moveDir += dir;
+	if (cActive(Back)) moveDir -= dir;
+
+	const auto right = cross(dir, up);
+	if (cActive(Left)) moveDir -= right;
+	if (cActive(Right)) moveDir += right;
+
+	if (cActive(Up)) moveDir += up;
+	if (cActive(Down)) moveDir -= up;
+
+	if (length(moveDir) != 0.f)
+		normalize(moveDir);
+
+	eye += moveDir * speed * time;
+	view = lookAt(eye, eye + dir, up);
+
+	for (auto& key : keys_.pressed)
+		key = false;
+}
+
+void Camera3d::imgui() const
+{
+	ImGui::Text("enable / disable mouse capture - 1");
+	ImGui::Text("pitch / yaw - mouse");
+	ImGui::Text("move - wsad, space (up), lshift (down)");
+	ImGui::Text("pos: x: %.3f, y: %.3f, z: %.3f", eye.x, eye.y, eye.z);
+	ImGui::Text("pitch: %.3f, yaw: %.3f", pitch, yaw);
 }
