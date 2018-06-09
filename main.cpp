@@ -506,8 +506,7 @@ int main()
 
     ImGui::CreateContext();
     ImGui_ImplGlfwGL3_Init(window, false);
-	ImGui::StyleColorsLight();
-	ImGui::GetStyle().ScaleAllSizes(3);
+	ImGui::GetStyle().ScaleAllSizes(1.4f);
 
     GLuint program = createProgram(vertexSrc, fragmentSrc);
 

@@ -497,16 +497,16 @@ void Rasterizer::render(GLuint program)
 	ImGui::Text("press Esc to exit");
 	camera_.imgui();
 	ImGui::ColorEdit3("clear color", &clearColor.x);
-	ImGui::Text("triangles: %d", model_.faces.size());
+	ImGui::Text("model faces: %d", model_.faces.size());
 	ImGui::Checkbox("rotate model", &rotate);
 	ImGui::Checkbox("wireframe", &rndCmd_.wireframe);
 
-	if (ImGui::TreeNode("cull (counter-clockwise winding order"))
-	{
-		ImGui::Checkbox("back-faces", &rndCmd_.cullBackFaces);
-		ImGui::Checkbox("front-faces", &rndCmd_.cullFrontFaces);
-		ImGui::TreePop();
-	}
+	ImGui::Text("cull (counter-clockwise winding order");
+	ImGui::Checkbox("back-faces", &rndCmd_.cullBackFaces);
+	ImGui::Checkbox("front-faces", &rndCmd_.cullFrontFaces);
+
+	ImGui::Checkbox("depth test", &rndCmd_.depthTest);
+	ImGui::Checkbox("style2", &shader_.style2);
 
 	static bool test = false;
 	static ShaderTest tshader;
@@ -531,9 +531,6 @@ void Rasterizer::render(GLuint program)
 		rndCmd_.shader = &shader_;
 		rndCmd_.numFraces = model_.faces.size();
 	}
-
-	ImGui::Checkbox("depth test", &rndCmd_.depthTest);
-	ImGui::Checkbox("style2", &shader_.style2);
 
 	ImGui::End();
 }
