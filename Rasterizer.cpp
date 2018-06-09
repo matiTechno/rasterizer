@@ -610,6 +610,8 @@ void Camera3d::processEvent(const WinEvent& event)
 
 void Camera3d::update(const float time)
 {
+	up = normalize(up);
+
 	const vec3 dir = normalize( vec3(
 		cosf(toRadians(pitch)) * sinf(toRadians(yaw)) * -1.f,
 		sinf(toRadians(pitch)),
@@ -620,7 +622,7 @@ void Camera3d::update(const float time)
 	if (cActive(Forward)) moveDir += dir;
 	if (cActive(Back)) moveDir -= dir;
 
-	const auto right = cross(dir, up);
+	const auto right = normalize(cross(dir, up));
 	if (cActive(Left)) moveDir -= right;
 	if (cActive(Right)) moveDir += right;
 
@@ -630,8 +632,8 @@ void Camera3d::update(const float time)
 	if (length(moveDir) != 0.f)
 		normalize(moveDir);
 
-	eye += moveDir * speed * time;
-	view = lookAt(eye, eye + dir, up);
+	pos += moveDir * speed * time;
+	view = lookAt(pos, pos + dir, up);
 
 	for (auto& key : keys_.pressed)
 		key = false;
@@ -642,6 +644,6 @@ void Camera3d::imgui() const
 	ImGui::Text("enable / disable mouse capture - 1");
 	ImGui::Text("pitch / yaw - mouse");
 	ImGui::Text("move - wsad, space (up), lshift (down)");
-	ImGui::Text("pos: x: %.3f, y: %.3f, z: %.3f", eye.x, eye.y, eye.z);
+	ImGui::Text("pos: x: %.3f, y: %.3f, z: %.3f", pos.x, pos.y, pos.z);
 	ImGui::Text("pitch: %.3f, yaw: %.3f", pitch, yaw);
 }

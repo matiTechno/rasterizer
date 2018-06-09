@@ -560,8 +560,8 @@ public:
 	void update(float time);
 	void imgui() const;
 
-	vec3 eye = { 0.f, 0.f, 3.f };
-	vec3 up = { 0.f, 1.f, 0.f };
+	vec3 pos = { 0.f, 0.f, 3.f };
+	vec3 up = { 0.f, 1.f, 0.f }; // will be normalized in the update() function
 	float speed = 2.f;
 	float sensitivity = 0.1f; // degrees / screen coordinates
 	                          // from GLFW - screen coordinates are not always pixels
