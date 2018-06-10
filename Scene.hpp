@@ -251,10 +251,10 @@ inline float dot(vec2 v1, vec2 v2)
 	return v1.x * v2.x + v1.y * v2.y;
 }
 
-// n must be normalized - we are reflecting around the normal
+// n must be normalized
 inline vec3 reflect(vec3 toReflect, vec3 n)
 {
-	return dot(toReflect, n) * n * 2 - toReflect;
+	return dot(toReflect, n) * n * -2.f + toReflect;
 }
 
 struct mat4
@@ -355,11 +355,24 @@ mat4 perspective(float fovy, float aspect, float near, float far)
 	return frustrum(right, top, near, far);
 }
 
+// in degrees
+mat4 rotateY(float angle)
+{
+	const float rad = toRadians(angle);
+	const float sin = sinf(rad);
+	const float cos = cosf(rad);
+	mat4 m;
+	m.i.x = cos;
+	m.i.z = -sin;
+	m.k.x = sin;
+	m.k.z = cos;
+	return m;
+}
 
 // todo math stuff:
 // * rotation
 // * ortho
-// * inverse (needed for transforming normals)
+// * inverse
 // * quaternions
 // * frustrum culling
 
@@ -560,6 +573,7 @@ struct Framebuffer
 	ivec2 size;
 };
 
+// execution: vertex + fragment, next face, vertex + fragment, ...
 class Shader
 {
 public:
@@ -568,7 +582,6 @@ public:
 	virtual vec3 fragment(vec3 barycentricCoords) = 0;
 };
 
-// execution: vertex + fragment, next face, vertex + fragment, ...
 class Shader1 : public Shader
 {
 public:
@@ -576,13 +589,28 @@ public:
 	vec3 fragment(vec3 barycentricCoords) override;
 
 	Model* model;
-	float sin = 0.f, cos = 1.f;
-	vec3 vNormals[3];
-	vec2 vTexCoords[3];
+
+	struct
+	{
+		mat4 model;
+		mat4 view;
+		mat4 projection;
+	} mat;
+
+	struct
+	{
+		vec3 normals[3];
+		vec2 texCoords[3];
+		vec3 positions[3];
+	} v; // varyings
+
+	struct
+	{
+		vec3 dir; // will be normalized in fragment()
+	} light;
+
 	bool style2 = false;
-	mat4 viewMatrix;
-	mat4 projectionMatrix;
-	//vec3 vPositions[3];
+	vec3 cameraPos;
 };
 
 // NDC is left handed coordinate system (z points into the screen)
@@ -610,7 +638,7 @@ public:
 	void imgui();
 
 	bool forwardXZonly = false; // disable flying with W and S controls
-	vec3 pos = { 0.f, 0.f, 3.f };
+	vec3 pos = { 0.f, 0.2f, 1.2f };
 	vec3 up = { 0.f, 1.f, 0.f }; // will be normalized in update()
 	float speed = 2.f;
 	float sensitivity = 0.1f; // degrees / screen coordinates

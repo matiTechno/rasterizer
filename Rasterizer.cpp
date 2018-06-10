@@ -328,31 +328,32 @@ vec2 interpolate(vec2* verts, vec3 baricentricCoords)
 	return v;
 }
 
-// BUG: z-fighting (at least visually) at certain angles
-// todo: normals need to go under a special tranformation, transpose(inverse(modelM)) * n
-//       so the scaling operation will preserve normal direction
+// todo: normals need to go under a special tranformation: transpose(inverse(modelM)) * n,
+// so the non-uniform scaling operation will preserve normal direction
 vec4 Shader1::vertex(int faceIdx, int vIdx)
 {
-	vec3 pos = model->positions[model->faces[faceIdx].indices[vIdx].position];
-	pos.x = pos.x * cos + pos.z * sin;
-	pos.z = pos.x * -sin + pos.z * cos;
-	//vPositions[vIdx] = pos;
+	{
+		const vec3 n = model->normals[model->faces[faceIdx].indices[vIdx].normal];
+		v.normals[vIdx] = vec3(mat.model * vec4(n, 0.f)); // 0.f to remove the translation part
+	}
 
-	vNormals[vIdx] = model->normals[model->faces[faceIdx].indices[vIdx].normal];
-	vec3& n = vNormals[vIdx];
-	n.x = n.x * cos + n.z * sin;
-	n.z = n.x * -sin + n.z * cos;
+	v.texCoords[vIdx] = model->texCoords[model->faces[faceIdx].indices[vIdx].texCoord];
 
-	vTexCoords[vIdx] = model->texCoords[model->faces[faceIdx].indices[vIdx].texCoord];
-
-	return projectionMatrix * viewMatrix * vec4(pos.x, pos.y, pos.z, 1.f);
+	{
+		vec3 pos = model->positions[model->faces[faceIdx].indices[vIdx].position];
+		vec4 worldPos = mat.model * vec4(pos, 1.f);
+		v.positions[vIdx] = vec3(worldPos);
+		return mat.projection * mat.view * worldPos;
+	}
 }
 
 vec3 Shader1::fragment(vec3 b)
 {
-	vec3 n = normalize(interpolate(vNormals, b)); // I think normalization after inteprolation might make sense
-	vec3 lightDir = normalize(vec3(0.f, -1.f, -1.f));
-	float intensity = max(0.f, dot(n, -lightDir));
+	// I think normalization after inteprolation might make sense
+	const vec3 n = normalize(interpolate(v.normals, b)); 
+
+	light.dir = normalize(light.dir);
+	float intensity = max(0.f, dot(n, -light.dir));
 
 	if (style2)
 	{
@@ -365,29 +366,25 @@ vec3 Shader1::fragment(vec3 b)
 		return vec3(1.f, 0.6f, 0.f) * intensity;
 	}
 	
-	// this is Phong lighting model
+	// Phong shading
 
-	const vec2 tc = interpolate(vTexCoords, b);
-	vec3 sampleColor = model->diffuseTexture.sample(tc);
-	vec3 diffuse = 0.8f * sampleColor * intensity;
-	vec3 ambient = 0.2f * sampleColor;
+	const vec2 tc = interpolate(v.texCoords, b);
+	vec3 diffuseSample = model->diffuseTexture.sample(tc);
+	vec3 diffuse = 0.7f * diffuseSample * intensity;
+	vec3 ambient = 0.15f * diffuseSample;
 
-	// commented out because doesn't work :)
-	// todo: maybe our specular map is in fact specular shininess map as suggested in the tutorial
-	/*
-	const vec3 reflectedLight = reflect(lightDir, n);
-	const vec3 fragPos = interpolate(vPositions, b);
-	const vec3 eyePos = { 0.f, 0.f, 5.f };
-	const vec3 viewDir = normalize(fragPos - eyePos);
-	const float shininess = 32.f;
-	//TOOD: Blinn-Phong
-	const float specularIntensity = powf(max(0.f, dot(-viewDir, reflectedLight)), shininess);
-	const vec3 specularColor = model->specularTexture.sample(tc);
-	*/
+	// I'm not sure if I'm using the specular map correctly here
+	// in the tinyrender tutorial: specular map = shininess
+	// todo: Blinn-Phong
+	const vec3 reflectedLight = reflect(light.dir, n);
+	const vec3 fragPos = interpolate(v.positions, b);
+	const vec3 viewDir = normalize(fragPos - cameraPos);
+	const float shininess = 10.f;
+	const vec3 specular = model->specularTexture.sample(tc)
+		* powf(max(0.f, dot(-viewDir, reflectedLight)), shininess);
 
-	return diffuse + ambient;
+	return diffuse + specular + ambient;
 }
-
 
 class ShaderTest : public Shader
 {
@@ -459,18 +456,21 @@ void Rasterizer::render(GLuint program)
 		v = FLT_MAX;
 
 	static bool rotate = false;
-	if(rotate)
-	{
-		static float time = 0.f;
-		time += frame_.time / 6.f;
-		shader_.sin = sinf(time);
-		shader_.cos = cosf(time);
-	}
+	static float angle = 0.f;
+
+	if (rotate)
+		angle += frame_.time * 4.f;
 
 	camera_.update(frame_.time);
-	shader_.viewMatrix = camera_.view;
+
+	// setting up the shader
+
+	shader_.mat.model = rotateY(angle);
+	shader_.mat.view = camera_.view;
 	float aspect = float(framebuffer_.size.x) / framebuffer_.size.y;
-	shader_.projectionMatrix = perspective(45.f, aspect, 0.1f, 50.f);
+	shader_.mat.projection = perspective(45.f, aspect, 0.1f, 50.f);
+	shader_.light.dir = { 0.f, -1.f, -1.f };
+	shader_.cameraPos = camera_.pos;
 
 	// here the magic happens
 	draw(rndCmd_);
