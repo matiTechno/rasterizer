@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Array.hpp"
-#include "float.h"
 #include <math.h>
 
 template<typename T>
@@ -69,7 +68,9 @@ struct tvec4
     tvec4 operator*(T v)     const {return {x * v, y * v, z * v, w * v};}
     tvec4 operator/(tvec4 v) const {return {x / v.x, y / v.y, z / v.z, w / v.w};}
     tvec4 operator/(T v)     const {return {x / v, y / v, z / v, w / v};}
-	T     operator[](int idx)const {return *(&x + idx);}
+
+	const T&     operator[](int idx)const {return *(&x + idx);}
+	      T&     operator[](int idx)      {return *(&x + idx);}
 
     bool operator==(tvec4 v) const {return x == v.x && y == v.y && z == v.z && w == v.w;}
     bool operator!=(tvec4 v) const {return !(*this == v);}
@@ -120,7 +121,9 @@ struct tvec3
     tvec3 operator*(T v)     const {return {x * v, y * v, z * v};}
     tvec3 operator/(tvec3 v) const {return {x / v.x, y / v.y, z / v.z};}
     tvec3 operator/(T v)     const {return {x / v, y / v, z / v};}
-	T     operator[](int idx)const {return *(&x + idx);}
+
+	const T&     operator[](int idx)const {return *(&x + idx);}
+	      T&     operator[](int idx)      {return *(&x + idx);}
 
     bool operator==(tvec3 v) const {return x == v.x && y == v.y && z == v.z;}
     bool operator!=(tvec3 v) const {return !(*this == v);}
@@ -171,7 +174,9 @@ struct tvec2
     tvec2 operator*(T v)     const {return {x * v, y * v};}
     tvec2 operator/(tvec2 v) const {return {x / v.x, y / v.y};}
     tvec2 operator/(T v)     const {return {x / v, y / v};}
-	T     operator[](int idx)const {return *(&x + idx);}
+
+	const T&     operator[](int idx)const {return *(&x + idx);}
+	      T&     operator[](int idx)      {return *(&x + idx);}
 
     bool operator==(tvec2 v) const {return x == v.x && y == v.y;}
     bool operator!=(tvec2 v) const {return !(*this == v);}
@@ -257,12 +262,12 @@ struct mat4
 	vec4 i = { 1.f, 0.f, 0.f, 0.f };
 	vec4 j = { 0.f, 1.f, 0.f, 0.f };
 	vec4 k = { 0.f, 0.f, 1.f, 0.f };
-	vec4 h = { 0.f, 0.f, 0.f, 1.f };
+	vec4 w = { 0.f, 0.f, 0.f, 1.f };
 };
 
 vec4 operator*(const mat4& m, vec4 v)
 {
-	return m.i * v.x + m.j * v.y + m.k * v.z + m.h * v.w;
+	return m.i * v.x + m.j * v.y + m.k * v.z + m.w * v.w;
 }
 
 mat4 operator*(const mat4& ml, const mat4& mr)
@@ -271,24 +276,33 @@ mat4 operator*(const mat4& ml, const mat4& mr)
 	m.i = ml * mr.i;
 	m.j = ml * mr.j;
 	m.k = ml * mr.k;
-	m.h = ml * mr.h;
+	m.w = ml * mr.w;
 	return m;
 }
 
 mat4 translate(vec3 v)
 {
 	mat4 m;
-	m.h = vec4(v, 1.f);
+	m.w = vec4(v, 1.f);
+	return m;
+}
+
+mat4 scale(vec3 scale)
+{
+	mat4 m;
+	m.i.x = scale.x;
+	m.j.y = scale.y;
+	m.k.z = scale.z;
 	return m;
 }
 
 mat4 transpose(const mat4& m)
 {
 	mat4 mt;
-	mt.i = { m.i.x, m.j.x, m.k.x, m.h.x };
-	mt.j = { m.i.y, m.j.y, m.k.y, m.h.y };
-	mt.k = { m.i.z, m.j.z, m.k.z, m.h.z };
-	mt.h = { m.i.w, m.j.w, m.k.w, m.h.w };
+	mt.i = { m.i.x, m.j.x, m.k.x, m.w.x };
+	mt.j = { m.i.y, m.j.y, m.k.y, m.w.y };
+	mt.k = { m.i.z, m.j.z, m.k.z, m.w.z };
+	mt.w = { m.i.w, m.j.w, m.k.w, m.w.w };
 	return mt;
 }
 
@@ -309,12 +323,45 @@ mat4 lookAt(vec3 pos, vec3 target, vec3 up)
 	return bInverse * translate(-pos);
 }
 
+// windows...
+#undef near
+#undef far
+
+// songho.ca/opengl/gl_projectionmatrix.html
+
+mat4 frustrum(float right, float top, float near, float far)
+{
+	mat4 m;
+	m.i = { near / right, 0.f, 0.f, 0.f };
+	m.j = { 0.f, near / top, 0.f, 0.f };
+	m.k = { 0.f, 0.f, -(far + near) / (far - near), -1.f};
+	m.w = { 0.f, 0.f, (-2.f * far * near) / (far - near), 0.f };
+	return m;
+}
+
 #define Pi 3.14159265359f
 
 inline float toRadians(float degrees)
 {
 	return degrees / 360.f * 2.f * Pi;
 }
+
+// fovy is in degrees
+mat4 perspective(float fovy, float aspect, float near, float far)
+{
+	fovy = toRadians(fovy);
+	float top = tanf(fovy) * near;
+	float right = aspect * top;
+	return frustrum(right, top, near, far);
+}
+
+
+// todo math stuff:
+// * rotation
+// * ortho
+// * inverse (needed for transforming normals)
+// * quaternions
+// * frustrum culling
 
 struct FragmentMode
 {
@@ -534,6 +581,7 @@ public:
 	vec2 vTexCoords[3];
 	bool style2 = false;
 	mat4 viewMatrix;
+	mat4 projectionMatrix;
 	//vec3 vPositions[3];
 };
 
@@ -549,6 +597,7 @@ struct RenderCommand
 	bool cullBackFaces = true;
 };
 
+// todo: arcball camera
 class Camera3d
 {
 public:
@@ -558,10 +607,11 @@ public:
 	void processEvent(const WinEvent& event);
 	// process events first
 	void update(float time);
-	void imgui() const;
+	void imgui();
 
+	bool forwardXZonly = false; // disable flying with W and S controls
 	vec3 pos = { 0.f, 0.f, 3.f };
-	vec3 up = { 0.f, 1.f, 0.f }; // will be normalized in the update() function
+	vec3 up = { 0.f, 1.f, 0.f }; // will be normalized in update()
 	float speed = 2.f;
 	float sensitivity = 0.1f; // degrees / screen coordinates
 	                          // from GLFW - screen coordinates are not always pixels

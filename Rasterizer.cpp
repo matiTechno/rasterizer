@@ -240,7 +240,7 @@ void draw(const RenderCommand& rndCmd)
 			for (vec4& pos : hPositions)
 			{
 				// if a ith-coordinate of a pos is in the visible range then ...
-				if (-pos.w < pos[i] && pos[i] < pos.w)
+				if (-pos.w <= pos[i] && pos[i] <= pos.w)
 				{
 					coordOutOfRange = false;
 					break;
@@ -254,9 +254,8 @@ void draw(const RenderCommand& rndCmd)
 			}
 		}
 
-		// start using when we start applying the projection matrix
-		//if (clip)
-			//continue;
+		if (clip)
+			continue;
 
 		// clip space (perspective divide) -> NDC
 		vec3 positions[3];
@@ -346,15 +345,13 @@ vec4 Shader1::vertex(int faceIdx, int vIdx)
 
 	vTexCoords[vIdx] = model->texCoords[model->faces[faceIdx].indices[vIdx].texCoord];
 
-	// we don't use the projection matrix yet, which flips the z so we have to do this here
-	// (to keep the depth test correct)
-	return viewMatrix * vec4(pos.x, pos.y, -pos.z, 1.f);
+	return projectionMatrix * viewMatrix * vec4(pos.x, pos.y, pos.z, 1.f);
 }
 
 vec3 Shader1::fragment(vec3 b)
 {
 	vec3 n = normalize(interpolate(vNormals, b)); // I think normalization after inteprolation might make sense
-	vec3 lightDir = normalize(vec3(0.f, 0.f, -1.f));
+	vec3 lightDir = normalize(vec3(0.f, -1.f, -1.f));
 	float intensity = max(0.f, dot(n, -lightDir));
 
 	if (style2)
@@ -365,14 +362,15 @@ vec3 Shader1::fragment(vec3 b)
 		else if (intensity > 0.3f) intensity = 0.45f;
 		else if (intensity > 0.15f) intensity = 0.3f;
 		else intensity = 0.f;
-
 		return vec3(1.f, 0.6f, 0.f) * intensity;
 	}
 	
-	// this is Phong lighting model (without ambient)
+	// this is Phong lighting model
 
 	const vec2 tc = interpolate(vTexCoords, b);
-	vec3 color = model->diffuseTexture.sample(tc) * intensity;
+	vec3 sampleColor = model->diffuseTexture.sample(tc);
+	vec3 diffuse = 0.8f * sampleColor * intensity;
+	vec3 ambient = 0.2f * sampleColor;
 
 	// commented out because doesn't work :)
 	// todo: maybe our specular map is in fact specular shininess map as suggested in the tutorial
@@ -387,7 +385,7 @@ vec3 Shader1::fragment(vec3 b)
 	const vec3 specularColor = model->specularTexture.sample(tc);
 	*/
 
-	return color;
+	return diffuse + ambient;
 }
 
 
@@ -397,7 +395,7 @@ public:
 	vec4 vertex(int faceIdx, int vIdx) override
 	{
 		vec3 p = positions[vIdx];
-		return vec4(p.x, p.y, -p.z, 1.f);
+		return vec4(p.x, p.y, p.z, 1.f);
 	}
 
 	vec3 fragment(vec3 b) override
@@ -446,7 +444,6 @@ void Rasterizer::processInput(const Array<WinEvent>& events)
 		camera_.processEvent(e);
 	}
 }
-
 void Rasterizer::render(GLuint program)
 {
 	framebuffer_.colorArray.resize(frame_.fbSize.x * frame_.fbSize.y);
@@ -472,6 +469,8 @@ void Rasterizer::render(GLuint program)
 
 	camera_.update(frame_.time);
 	shader_.viewMatrix = camera_.view;
+	float aspect = float(framebuffer_.size.x) / framebuffer_.size.y;
+	shader_.projectionMatrix = perspective(45.f, aspect, 0.1f, 50.f);
 
 	// here the magic happens
 	draw(rndCmd_);
@@ -619,12 +618,16 @@ void Camera3d::update(const float time)
 
 	vec3 moveDir(0.f);
 
-	if (cActive(Forward)) moveDir += dir;
-	if (cActive(Back)) moveDir -= dir;
-
-	const auto right = normalize(cross(dir, up));
-	if (cActive(Left)) moveDir -= right;
-	if (cActive(Right)) moveDir += right;
+	{
+		const auto forwardDir = forwardXZonly ? normalize(vec3(dir.x, 0.f, dir.z)) : dir;
+		if (cActive(Forward)) moveDir += forwardDir;
+		if (cActive(Back)) moveDir -= forwardDir;
+	}
+	{
+		const auto right = normalize(cross(dir, up));
+		if (cActive(Left)) moveDir -= right;
+		if (cActive(Right)) moveDir += right;
+	}
 
 	if (cActive(Up)) moveDir += up;
 	if (cActive(Down)) moveDir -= up;
@@ -639,11 +642,12 @@ void Camera3d::update(const float time)
 		key = false;
 }
 
-void Camera3d::imgui() const
+void Camera3d::imgui()
 {
 	ImGui::Text("enable / disable mouse capture - 1");
 	ImGui::Text("pitch / yaw - mouse");
 	ImGui::Text("move - wsad, space (up), lshift (down)");
 	ImGui::Text("pos: x: %.3f, y: %.3f, z: %.3f", pos.x, pos.y, pos.z);
 	ImGui::Text("pitch: %.3f, yaw: %.3f", pitch, yaw);
+	ImGui::Checkbox("disable flying with WS", &forwardXZonly);
 }
