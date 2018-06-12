@@ -383,7 +383,9 @@ vec3 Shader1::fragment(vec3 b)
 	const vec3 specular = model->specularTexture.sample(tc)
 		* powf(max(0.f, dot(-viewDir, reflectedLight)), shininess);
 
-	return diffuse + specular + ambient;
+	const vec3 glow = model->glowTexture.sample(tc);
+
+	return diffuse + specular + ambient + glow;
 }
 
 class ShaderTest : public Shader
@@ -415,6 +417,7 @@ Rasterizer::Rasterizer()
 	loadModel(model_, "res/diablo3_pose/diablo3_pose.obj");
 	loadBitmapFromFile(model_.diffuseTexture, "res/diablo3_pose/diablo3_pose_diffuse.tga");
 	loadBitmapFromFile(model_.specularTexture, "res/diablo3_pose/diablo3_pose_spec.tga");
+	loadBitmapFromFile(model_.glowTexture, "res/diablo3_pose/diablo3_pose_glow.tga");
 
 	shader_.model = &model_;
 
@@ -427,6 +430,7 @@ Rasterizer::~Rasterizer()
 {
 	deleteBitmap(model_.diffuseTexture);
 	deleteBitmap(model_.specularTexture);
+	deleteBitmap(model_.glowTexture);
 	deleteGLBuffers(glBuffers_);
 	glDeleteTextures(1, &glTexture_);
 }
@@ -438,7 +442,8 @@ void Rasterizer::processInput(const Array<WinEvent>& events)
 		if (e.type == WinEvent::Type::Key && e.key.key == GLFW_KEY_ESCAPE && e.key.action == GLFW_PRESS)
 			frame_.popMe = true;
 
-		camera_.processEvent(e);
+		if(useFpsCamera_) camera_.processEvent(e);
+		else arcball_.processEvent(e);
 	}
 }
 void Rasterizer::render(GLuint program)
@@ -459,18 +464,20 @@ void Rasterizer::render(GLuint program)
 	static float angle = 0.f;
 
 	if (rotate)
-		angle += frame_.time * 4.f;
+		angle += frame_.time * 8.f;
 
-	camera_.update(frame_.time);
+	if (useFpsCamera_) camera_.update(frame_.time);
+	else arcball_.update();
 
 	// setting up the shader
 
 	shader_.mat.model = rotateY(angle);
-	shader_.mat.view = camera_.view;
 	float aspect = float(framebuffer_.size.x) / framebuffer_.size.y;
 	shader_.mat.projection = perspective(45.f, aspect, 0.1f, 50.f);
 	shader_.light.dir = { 0.f, -1.f, -1.f };
-	shader_.cameraPos = camera_.pos;
+
+	shader_.mat.view = useFpsCamera_ ? camera_.view : arcball_.view;
+	shader_.cameraPos = useFpsCamera_ ? camera_.pos: arcball_.pos;
 
 	// here the magic happens
 	draw(rndCmd_);
@@ -494,13 +501,17 @@ void Rasterizer::render(GLuint program)
 
 	ImGui::Begin("info");
 	ImGui::Text("press Esc to exit");
-	camera_.imgui();
+	ImGui::Checkbox("use fps camera", &useFpsCamera_);
+
+	if(useFpsCamera_) camera_.imgui();
+	else arcball_.imgui();
+
 	ImGui::ColorEdit3("clear color", &clearColor.x);
 	ImGui::Text("model faces: %d", model_.faces.size());
 	ImGui::Checkbox("rotate model", &rotate);
 	ImGui::Checkbox("wireframe", &rndCmd_.wireframe);
 
-	ImGui::Text("cull (counter-clockwise winding order");
+	ImGui::Text("cull (counter-clockwise winding order)");
 	ImGui::Checkbox("back-faces", &rndCmd_.cullBackFaces);
 	ImGui::Checkbox("front-faces", &rndCmd_.cullFrontFaces);
 
@@ -650,4 +661,54 @@ void Camera3d::imgui()
 	ImGui::Text("pos: x: %.3f, y: %.3f, z: %.3f", pos.x, pos.y, pos.z);
 	ImGui::Text("pitch: %.3f, yaw: %.3f", pitch, yaw);
 	ImGui::Checkbox("disable flying with WS", &forwardXZonly);
+}
+
+void ArcballCamera::processEvent(const WinEvent& event)
+{
+	if (event.type == WinEvent::Cursor)
+	{
+		if(buttonPressed_)
+			cursorPosDelta_ += event.cursor.pos - cursorPos_;
+
+		cursorPos_ = event.cursor.pos;
+	}
+	else if (event.type == WinEvent::MouseButton && event.mouseButton.button == GLFW_MOUSE_BUTTON_LEFT)
+	{
+		buttonPressed_ = event.mouseButton.action == GLFW_PRESS;
+	}
+	else if (event.type == WinEvent::Scroll)
+	{
+		scrollDelta_ += event.scroll.offset.y;
+	}
+}
+
+void ArcballCamera::update()
+{
+	{
+		const vec3 move = normalize(-pos) * 0.2f * scrollDelta_ * zoomSensitivity;
+		const vec3 prevPos = pos;
+		pos += move;
+
+		if (dot(prevPos, pos) < 0.f)
+			pos = prevPos; // not vec3(0.f) because then we lose the direction
+	}
+
+	// todo:
+	// implement view matrix with rotations instead of LookAt() like in Sascha's examples
+	// (I think it might be much better, but then: how to retrive camera.pos to use in shaders)
+
+	// I don't know how to do it correctly for both axis with this technique...
+	const float angleX = cursorPosDelta_.x * rotateSensitivity * -1.f;
+	pos = vec3(rotateY(angleX) * vec4(pos, 1.f));
+	view = lookAt(pos, vec3(0.f), { 0.f, 1.f, 0.f });
+
+	cursorPosDelta_ = vec2(0.f);
+	scrollDelta_ = 0.f;
+}
+
+void ArcballCamera::imgui()
+{
+	ImGui::Text("Arcball camera - press lmb and move the cursor\n"
+		"to rotate around the scene, scroll to zoom");
+	ImGui::Text("pos: x: %.3f, y: %.3f, z: %.3f", pos.x, pos.y, pos.z);
 }

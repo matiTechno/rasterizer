@@ -355,6 +355,8 @@ mat4 perspective(float fovy, float aspect, float near, float far)
 	return frustrum(right, top, near, far);
 }
 
+// todo: 3x3 matrices, rotation around any axis
+
 // in degrees
 mat4 rotateY(float angle)
 {
@@ -365,6 +367,20 @@ mat4 rotateY(float angle)
 	m.i.x = cos;
 	m.i.z = -sin;
 	m.k.x = sin;
+	m.k.z = cos;
+	return m;
+}
+
+// in degrees
+mat4 rotateX(float angle)
+{
+	const float rad = toRadians(angle);
+	const float sin = sinf(rad);
+	const float cos = cosf(rad);
+	mat4 m;
+	m.j.y = cos;
+	m.j.z = sin;
+	m.k.y = -sin;
 	m.k.z = cos;
 	return m;
 }
@@ -564,6 +580,7 @@ struct Model
 	Array<vec3> normals;
 	Bitmap diffuseTexture;
 	Bitmap specularTexture;
+	Bitmap glowTexture;
 };
 
 struct Framebuffer
@@ -625,7 +642,31 @@ struct RenderCommand
 	bool cullBackFaces = true;
 };
 
-// todo: arcball camera
+// actually Camera's are a good fit for virtual functions (processEvent, update, imgui)
+// and base members (pos, view)
+class ArcballCamera
+{
+public:
+	void processEvent(const WinEvent& event);
+	// process events first
+	void update();
+	void imgui();
+
+	float zoomSensitivity = 1.f; 
+	float rotateSensitivity = 0.5f; // degrees / screen coordinates
+
+	// get after update();
+	mat4 view;
+	vec3 pos = { 0.f, 0.f, 2.f };
+
+private:
+	vec2 cursorPos_;
+	vec2 cursorPosDelta_ = vec2(0.f);
+	bool buttonPressed_ = false;
+	float scrollDelta_ = 0.f;
+};
+
+// fps camera
 class Camera3d
 {
 public:
@@ -638,17 +679,18 @@ public:
 	void imgui();
 
 	bool forwardXZonly = false; // disable flying with W and S controls
-	vec3 pos = { 0.f, 0.2f, 1.2f };
 	vec3 up = { 0.f, 1.f, 0.f }; // will be normalized in update()
 	float speed = 2.f;
 	float sensitivity = 0.1f; // degrees / screen coordinates
 	                          // from GLFW - screen coordinates are not always pixels
+
+	// get after update()
+
+	mat4 view;
+	vec3 pos = { 0.f, 0.2f, 1.2f };
 	// degrees
 	float pitch = 0.f;
 	float yaw = 0.f;
-
-	// get after update()
-	mat4 view;
 
 private:
 	enum
@@ -691,7 +733,12 @@ private:
 	GLuint glTexture_;
 	GLBuffers glBuffers_;
 	Model model_;
+
+	// todo: make them static in render() (do not need cleanup)
+	// todo: make one function execute(frame) instead of processInput(), update(), render()
+	bool useFpsCamera_ = true;
 	Shader1 shader_;
 	RenderCommand rndCmd_;
 	Camera3d camera_;
+	ArcballCamera arcball_;
 };
