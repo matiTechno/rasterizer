@@ -86,6 +86,44 @@ void loadModel(Model& model, const char* const filename)
 	}
 
 	fclose(file);
+
+	// calculate tangents
+	for (Face& face : model.faces)
+	{
+		vec3 dPos1;
+		vec3 dPos2;
+		{
+			const vec3 v0 = model.positions[face.indices[0].position];
+			const vec3 v1 = model.positions[face.indices[1].position];
+			const vec3 v2 = model.positions[face.indices[2].position];
+			
+			dPos1 = v1 - v0;
+			dPos1 = v2 - v0;
+		}
+
+		vec2 dUV1;
+		vec2 dUV2;
+		{
+			const vec2 uv0 = model.texCoords[face.indices[0].texCoord];
+			const vec2 uv1 = model.texCoords[face.indices[1].texCoord];
+			const vec2 uv2 = model.texCoords[face.indices[2].texCoord];
+
+			dUV1 = uv1 - uv0;
+			dUV2 = uv2 - uv0;
+		}
+
+		// this is solving the following linear equation:
+		// dPos1 = dUV1.x * T + dUV1.y * B 
+		// dPos2 = dUV2.x * T + dUV2.y * B 
+
+		const float r = 1.f / (dUV1.x * dUV2.y - dUV1.y * dUV2.x);
+		const vec3 tangent = (dPos1 * dUV2.y - dPos2 * dUV1.y) * r;
+
+		model.tangents.pushBack(tangent);
+
+		for (int i = 0; i < 3; ++i)
+			face.indices[i].tangent = model.tangents.size() - 1;
+	}
 }
 
 inline RGB8 toRGB8(vec3 color)
@@ -305,10 +343,38 @@ void draw(const RenderCommand& rndCmd)
 			for (int i = 0; i < 3; ++i)
 				drawLine(*rndCmd.fb, positions[i], positions[(i + 1) % 3], { 1.f, 0.f, 1.f });
 		}
+
+		if (rndCmd.shader->tangentDebug.enable)
+		{
+			for (int vIdx = 0; vIdx < 3; ++vIdx)
+			{
+				// to NDC
+				vec3 TBNPositions[3];
+				for (int i = 0; i < 3; ++i)
+				{
+					vec4 hPos = rndCmd.shader->tangentDebug.positions[vIdx][i];
+					TBNPositions[i] = vec3(hPos / hPos.w);
+				}
+				
+				// to window
+				for (int i = 0; i < 3; ++i)
+				{
+					vec3& v = TBNPositions[i];
+					v.y *= -1.f;
+					v = (v + 1.f) / 2.f;
+					v.x *= (rndCmd.fb->size.x - 1.f);
+					v.y *= (rndCmd.fb->size.y - 1.f);
+				}
+
+				drawLine(*rndCmd.fb, positions[vIdx], TBNPositions[0], { 1.f, 0.f, 0.f }); // tangent
+				drawLine(*rndCmd.fb, positions[vIdx], TBNPositions[1], { 0.f, 1.f, 0.f }); // bitangent
+				drawLine(*rndCmd.fb, positions[vIdx], TBNPositions[2], { 0.f, 0.f, 1.f }); // normal
+			}
+		}
 	}
 }
 
-vec3 interpolate(vec3* verts, vec3 baricentricCoords)
+vec3 interpolate(const vec3* verts, vec3 baricentricCoords)
 {
 	vec3 v(0.f);
 	for (int i = 0; i < 3; ++i)
@@ -318,7 +384,7 @@ vec3 interpolate(vec3* verts, vec3 baricentricCoords)
 	return v;
 }
 
-vec2 interpolate(vec2* verts, vec3 baricentricCoords)
+vec2 interpolate(const vec2* verts, vec3 baricentricCoords)
 {
 	vec2 v(0.f);
 	for (int i = 0; i < 3; ++i)
@@ -328,13 +394,40 @@ vec2 interpolate(vec2* verts, vec3 baricentricCoords)
 	return v;
 }
 
+mat3 interpolate(const mat3* mats, vec3 baricentricCoords)
+{
+	// todo: better matrix initialization, something like in glm
+	mat3 m;
+	m.i = vec3(0.f);
+	m.j = vec3(0.f);
+	m.k = vec3(0.f);
+
+	for (int i = 0; i < 3; ++i)
+		for (int x = 0; x < 3; ++x)
+			for (int y = 0; y < 3; ++y)
+				m[x][y] += mats[i][x][y] * baricentricCoords[i];
+
+	return m;
+}
+
 // todo: normals need to go under a special tranformation: transpose(inverse(modelM)) * n,
 // so the non-uniform scaling operation will preserve normal direction
 vec4 Shader1::vertex(int faceIdx, int vIdx)
 {
 	{
-		const vec3 n = model->normals[model->faces[faceIdx].indices[vIdx].normal];
-		v.normals[vIdx] = vec3(mat.model * vec4(n, 0.f)); // 0.f to remove the translation part
+		// todo: re-orthogonalize tangent with respect to normal
+		vec3 tangent = model->tangents[model->faces[faceIdx].indices[vIdx].tangent];
+		tangent = normalize(vec3(mat.model * vec4(tangent, 0.f))); // 0.f to remove the translation part
+
+		vec3 normal = model->normals[model->faces[faceIdx].indices[vIdx].normal];
+		normal = normalize(vec3(mat.model * vec4(normal, 0.f)));
+
+		const vec3 bitangent = cross(normal, tangent);
+
+		v.TBN[vIdx].i = tangent;
+		v.TBN[vIdx].j = bitangent;
+		v.TBN[vIdx].k = normal;
+
 	}
 
 	v.texCoords[vIdx] = model->texCoords[model->faces[faceIdx].indices[vIdx].texCoord];
@@ -342,6 +435,13 @@ vec4 Shader1::vertex(int faceIdx, int vIdx)
 	{
 		vec3 pos = model->positions[model->faces[faceIdx].indices[vIdx].position];
 		vec4 worldPos = mat.model * vec4(pos, 1.f);
+
+		if (tangentDebug.enable)
+		{
+			for(int i = 0; i < 3; ++i)
+				tangentDebug.positions[vIdx][i] = mat.projection * mat.view * (vec4(v.TBN[vIdx][i] / 20.f, 0.f) + worldPos);
+		}
+
 		v.positions[vIdx] = vec3(worldPos);
 		return mat.projection * mat.view * worldPos;
 	}
@@ -349,8 +449,20 @@ vec4 Shader1::vertex(int faceIdx, int vIdx)
 
 vec3 Shader1::fragment(vec3 b)
 {
-	// I think normalization after inteprolation might make sense
-	const vec3 n = normalize(interpolate(v.normals, b)); 
+	const vec2 tc = interpolate(v.texCoords, b);
+
+	mat3 TBN = interpolate(v.TBN, b);
+	for (int i = 0; i < 3; ++i) TBN[i] = normalize(TBN[i]);
+
+	vec3 n;
+
+	if (useNormalMap)
+	{
+		n = model->tangentNormalMap.sample(tc) * 2.f - 1.f; 
+		n = normalize(TBN * n);
+	}
+	else
+		n = TBN.k;
 
 	light.dir = normalize(light.dir);
 	float intensity = max(0.f, dot(n, -light.dir));
@@ -368,7 +480,6 @@ vec3 Shader1::fragment(vec3 b)
 	
 	// Phong shading
 
-	const vec2 tc = interpolate(v.texCoords, b);
 	vec3 diffuseSample = model->diffuseTexture.sample(tc);
 	vec3 diffuse = 0.7f * diffuseSample * intensity;
 	vec3 ambient = 0.15f * diffuseSample;
@@ -418,6 +529,7 @@ Rasterizer::Rasterizer()
 	loadBitmapFromFile(model_.diffuseTexture, "res/diablo3_pose/diablo3_pose_diffuse.tga");
 	loadBitmapFromFile(model_.specularTexture, "res/diablo3_pose/diablo3_pose_spec.tga");
 	loadBitmapFromFile(model_.glowTexture, "res/diablo3_pose/diablo3_pose_glow.tga");
+	loadBitmapFromFile(model_.tangentNormalMap, "res/diablo3_pose/diablo3_pose_nm_tangent.tga");
 
 	shader_.model = &model_;
 
@@ -431,6 +543,7 @@ Rasterizer::~Rasterizer()
 	deleteBitmap(model_.diffuseTexture);
 	deleteBitmap(model_.specularTexture);
 	deleteBitmap(model_.glowTexture);
+	deleteBitmap(model_.tangentNormalMap);
 	deleteGLBuffers(glBuffers_);
 	glDeleteTextures(1, &glTexture_);
 }
@@ -479,6 +592,7 @@ void Rasterizer::render(GLuint program)
 	shader_.mat.view = useFpsCamera_ ? camera_.view : arcball_.view;
 	shader_.cameraPos = useFpsCamera_ ? camera_.pos: arcball_.pos;
 
+	// todo: draw the light source
 	// here the magic happens
 	draw(rndCmd_);
 
@@ -517,6 +631,8 @@ void Rasterizer::render(GLuint program)
 
 	ImGui::Checkbox("depth test", &rndCmd_.depthTest);
 	ImGui::Checkbox("style2", &shader_.style2);
+	ImGui::Checkbox("use normal map", &shader_.useNormalMap);
+	ImGui::Checkbox("debug tangents", &shader_.tangentDebug.enable);
 
 	static bool test = false;
 	static ShaderTest tshader;
@@ -695,7 +811,7 @@ void ArcballCamera::update()
 
 	// todo:
 	// implement view matrix with rotations instead of LookAt() like in Sascha's examples
-	// (I think it might be much better, but then: how to retrive camera.pos to use in shaders)
+	// (I think it might be much better, camera.pos will be vec3(0.f, 0.f, z) then - quite a different model)
 
 	// I don't know how to do it correctly for both axis with this technique...
 	const float angleX = cursorPosDelta_.x * rotateSensitivity * -1.f;

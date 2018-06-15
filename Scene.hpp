@@ -257,6 +257,31 @@ inline vec3 reflect(vec3 toReflect, vec3 n)
 	return dot(toReflect, n) * n * -2.f + toReflect;
 }
 
+struct mat3
+{
+	vec3 i = { 1.f, 0.f, 0.f };
+	vec3 j = { 0.f, 1.f, 0.f };
+	vec3 k = { 0.f, 0.f, 1.f };
+
+	vec3& operator[](int idx) { return *(&i + idx); }
+	const vec3& operator[](int idx) const { return *(&i + idx); }
+};
+
+inline vec3 operator*(const mat3& m, vec3 v)
+{
+	return v.x * m.i + v.y * m.j + v.z * m.k;
+}
+
+inline mat3 operator*(const mat3& lhs, const mat3& rhs)
+{
+	return
+	{
+		lhs * rhs.i,
+		lhs * rhs.j,
+		lhs * rhs.k
+	};
+}
+
 struct mat4
 {
 	vec4 i = { 1.f, 0.f, 0.f, 0.f };
@@ -356,7 +381,6 @@ mat4 perspective(float fovy, float aspect, float near, float far)
 }
 
 // todo: 3x3 matrices, rotation around any axis
-
 // in degrees
 mat4 rotateY(float angle)
 {
@@ -541,7 +565,7 @@ struct RGB8
 
 struct Index
 {
-	int position, texCoord, normal;
+	int position, texCoord, normal, tangent;
 };
 
 struct Face
@@ -572,15 +596,18 @@ struct Bitmap
 void loadBitmapFromFile(Bitmap& bitmap, const char* filename);
 void deleteBitmap(Bitmap& bitmap);
 
+// todo: this is not cache friendly
 struct Model
 {
 	Array<Face> faces;
 	Array<vec3> positions;
 	Array<vec2> texCoords;
 	Array<vec3> normals;
+	Array<vec3> tangents;
 	Bitmap diffuseTexture;
 	Bitmap specularTexture;
 	Bitmap glowTexture;
+	Bitmap tangentNormalMap;
 };
 
 struct Framebuffer
@@ -597,6 +624,12 @@ public:
 	virtual ~Shader() = default;
 	virtual vec4 vertex(int faceIdx, int triangleVertexIdx) = 0;
 	virtual vec3 fragment(vec3 barycentricCoords) = 0;
+
+	struct
+	{
+		bool enable = false;
+		vec4 positions[3][3];
+	} tangentDebug;
 };
 
 class Shader1 : public Shader
@@ -616,9 +649,9 @@ public:
 
 	struct
 	{
-		vec3 normals[3];
 		vec2 texCoords[3];
 		vec3 positions[3];
+		mat3 TBN[3]; // tanget - bitangent - normal (tangent basis)
 	} v; // varyings
 
 	struct
@@ -628,6 +661,7 @@ public:
 
 	bool style2 = false;
 	vec3 cameraPos;
+	bool useNormalMap = true;
 };
 
 // NDC is left handed coordinate system (z points into the screen)
