@@ -337,39 +337,39 @@ void draw(const RenderCommand& rndCmd)
 
         // rasterization
 			drawTriangle(*rndCmd.fb, *rndCmd.shader, rndCmd.depthTest, positions[0], positions[1], positions[2]);
+
+			if (rndCmd.shader->tangentDebug.enable)
+			{
+				for (int vIdx = 0; vIdx < 3; ++vIdx)
+				{
+					// to NDC
+					vec3 TBNPositions[3];
+					for (int i = 0; i < 3; ++i)
+					{
+						vec4 hPos = rndCmd.shader->tangentDebug.positions[vIdx][i];
+						TBNPositions[i] = vec3(hPos / hPos.w);
+					}
+					
+					// to window
+					for (int i = 0; i < 3; ++i)
+					{
+						vec3& v = TBNPositions[i];
+						v.y *= -1.f;
+						v = (v + 1.f) / 2.f;
+						v.x *= (rndCmd.fb->size.x - 1.f);
+						v.y *= (rndCmd.fb->size.y - 1.f);
+					}
+
+					drawLine(*rndCmd.fb, positions[vIdx], TBNPositions[0], { 1.f, 0.f, 0.f }); // tangent
+					drawLine(*rndCmd.fb, positions[vIdx], TBNPositions[1], { 0.f, 1.f, 0.f }); // bitangent
+					drawLine(*rndCmd.fb, positions[vIdx], TBNPositions[2], { 0.f, 0.f, 1.f }); // normal
+				}
+			}
 		}
 		else
 		{
 			for (int i = 0; i < 3; ++i)
 				drawLine(*rndCmd.fb, positions[i], positions[(i + 1) % 3], { 1.f, 0.f, 1.f });
-		}
-
-		if (rndCmd.shader->tangentDebug.enable)
-		{
-			for (int vIdx = 0; vIdx < 3; ++vIdx)
-			{
-				// to NDC
-				vec3 TBNPositions[3];
-				for (int i = 0; i < 3; ++i)
-				{
-					vec4 hPos = rndCmd.shader->tangentDebug.positions[vIdx][i];
-					TBNPositions[i] = vec3(hPos / hPos.w);
-				}
-				
-				// to window
-				for (int i = 0; i < 3; ++i)
-				{
-					vec3& v = TBNPositions[i];
-					v.y *= -1.f;
-					v = (v + 1.f) / 2.f;
-					v.x *= (rndCmd.fb->size.x - 1.f);
-					v.y *= (rndCmd.fb->size.y - 1.f);
-				}
-
-				drawLine(*rndCmd.fb, positions[vIdx], TBNPositions[0], { 1.f, 0.f, 0.f }); // tangent
-				drawLine(*rndCmd.fb, positions[vIdx], TBNPositions[1], { 0.f, 1.f, 0.f }); // bitangent
-				drawLine(*rndCmd.fb, positions[vIdx], TBNPositions[2], { 0.f, 0.f, 1.f }); // normal
-			}
 		}
 	}
 }
