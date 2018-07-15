@@ -259,6 +259,13 @@ inline vec3 reflect(vec3 toReflect, vec3 n)
 
 struct mat3
 {
+        mat3() = default;
+        mat3(vec3 i, vec3 j, vec3 k):
+            i(i),
+            j(j),
+            k(k)
+    {}
+
 	vec3 i = { 1.f, 0.f, 0.f };
 	vec3 j = { 0.f, 1.f, 0.f };
 	vec3 k = { 0.f, 0.f, 1.f };
@@ -275,7 +282,7 @@ inline vec3 operator*(const mat3& m, vec3 v)
 inline mat3 operator*(const mat3& lhs, const mat3& rhs)
 {
 	return
-	{
+	mat3{
 		lhs * rhs.i,
 		lhs * rhs.j,
 		lhs * rhs.k

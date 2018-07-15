@@ -128,10 +128,10 @@ void loadModel(Model& model, const char* const filename)
 
 inline RGB8 toRGB8(vec3 color)
 {
-	return {
-		unsigned char(min(color.x, 1.f) * 255),
-		unsigned char(min(color.y, 1.f) * 255),
-		unsigned char(min(color.z, 1.f) * 255) };
+	return RGB8{
+		(unsigned char)(min(color.x, 1.f) * 255),
+		(unsigned char)(min(color.y, 1.f) * 255),
+		(unsigned char)(min(color.z, 1.f) * 255) };
 }
 
 void setPx(Framebuffer& fb, ivec2 pos, vec3 color)
@@ -164,8 +164,8 @@ bool setPxDepth(Framebuffer& fb, ivec2 pos, float depth)
 
 void drawLine(Framebuffer& fb, vec3 startf, vec3 endf, vec3 color)
 {
-	ivec2 start = ivec2(startf.x, startf.y) + 0.5f;
-	ivec2 end = ivec2(endf.x, endf.y) + 0.5f;
+	ivec2 start = ivec2(vec2(startf.x, startf.y) + 0.5f);
+	ivec2 end = ivec2(vec2(endf.x, endf.y) + 0.5f);
 
 	// clamping, todo: the same as in drawTriangle
 	start.x = max(0, start.x);
@@ -216,9 +216,9 @@ vec3 getBarycentric(ivec2 A, ivec2 B, ivec2 C, ivec2 P)
 
 void drawTriangle(Framebuffer& fb, Shader& shader, bool depthTest, vec3 v1f, vec3 v2f, vec3 v3f)
 {
-	ivec2 v1 = ivec2(v1f.x, v1f.y) + 0.5f;
-	ivec2 v2 = ivec2(v2f.x, v2f.y) + 0.5f;
-	ivec2 v3 = ivec2(v3f.x, v3f.y) + 0.5f;
+	ivec2 v1 = ivec2(vec2(v1f.x, v1f.y) + 0.5f);
+	ivec2 v2 = ivec2(vec2(v2f.x, v2f.y) + 0.5f);
+	ivec2 v3 = ivec2(vec2(v3f.x, v3f.y) + 0.5f);
 
 	// finding the boundig box
 	ivec2 bboxStart;
