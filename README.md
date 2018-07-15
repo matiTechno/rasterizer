@@ -8,3 +8,5 @@ OpenGL / Window initialization stuff is managed by GLFW library and glad generat
 
 The only 'external' dependency is GLFW but for windows platform everything needed to compile is checked-in.
 No C++ standard library is used.
+
+To generate a binary compile the main.cpp (unity build).
